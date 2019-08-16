@@ -1,0 +1,21 @@
+language: go
+sudo: required
+
+go:
+  - 1.12.x
+
+go_import_path: github.com/containerd/release-tool
+
+install:
+  - go get -u github.com/vbatts/git-validation
+  - go get -u github.com/kunalkushwaha/ltag
+  - go get -u github.com/LK4D4/vndr
+
+before_script:
+  - pushd ..; git clone https://github.com/containerd/project; popd
+
+script:
+  - DCO_VERBOSITY=-q ../project/script/validate/dco
+  - ../project/script/validate/fileheader ../project/
+  - ../project/script/validate/vendor
+  - go build -o release-tool github.com/containerd/release-tool
