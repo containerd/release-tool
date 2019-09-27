@@ -35,6 +35,9 @@ import (
 	"github.com/urfave/cli"
 )
 
+const vendorConf = "vendor.conf"
+const goMod = "go.mod"
+
 func loadRelease(path string) (*release, error) {
 	var r release
 	if _, err := toml.DecodeFile(path, &r); err != nil {
@@ -50,19 +53,118 @@ func parseTag(path string) string {
 	return strings.TrimSuffix(filepath.Base(path), ".toml")
 }
 
-func parseDependencies(r io.Reader) ([]dependency, error) {
+func parseDependencies(commit string) ([]dependency, error) {
+	rd, err := fileFromRev(commit, vendorConf)
+	if err == nil {
+		return parseVendorConfDependencies(rd)
+	}
+	rd, err2 := fileFromRev(commit, goMod)
+	if err2 == nil {
+		return parseGoModDependencies(rd)
+	}
+	return nil, errors.Errorf("finding current dep file failed. vendor.conf error: %v, go.mod error: %v", err, err2)
+}
+
+func parseGoModDependencies(r io.Reader) ([]dependency, error) {
+	var deps []dependency
+	s := bufio.NewScanner(r)
+	// parse the require section
+	foundRequire := false
+	for s.Scan() {
+		ln := sanitizeLine(s.Text(), "//")
+		if ln == "" {
+			continue
+		}
+		parts := strings.Fields(ln)
+		numParts := len(parts)
+
+		// scan the file until we find `require (`, the beginning of the dependencies
+		if !foundRequire && numParts == 2 {
+			if parts[0] == "require" && parts[1] == "(" {
+				// we've made it to the requires section
+				foundRequire = true
+			}
+			continue
+		}
+
+		if numParts != 2 {
+			if numParts == 1 && parts[0] == ")" {
+				// this is the end of the requires section, break out to process the others
+				break
+			}
+			return nil, fmt.Errorf("invalid config format: %s", ln)
+		}
+
+		// parse the commit or version. It'll either be of the form
+		// v0.0.0 or v0.0.0-date-commitID. Split by '-' to check
+		commitOrVersion := getCommitOrVersion(parts[1])
+		if commitOrVersion == "" {
+			return nil, fmt.Errorf("invalid go.mod file, poorly formatted version in requires section %s", parts[1])
+		}
+
+		deps = append(deps, dependency{
+			Name:     parts[0],
+			Commit:   commitOrVersion,
+			CloneURL: "git://" + parts[0],
+		})
+	}
+	if err := s.Err(); err != nil {
+		return nil, err
+	}
+
+	// TODO incorporate the replace section
+	return deps, nil
+}
+
+func sanitizeLine(line, commentDelim string) string {
+	ln := strings.TrimSpace(line)
+	if ln == "" {
+		return ""
+	}
+	cidx := strings.Index(ln, commentDelim)
+	// whole line is commented
+	if cidx == 0 {
+		return ""
+	}
+	if cidx > 0 {
+		ln = ln[:cidx]
+	}
+
+	return strings.TrimSpace(ln)
+}
+
+func getCommitOrVersion(cov string) string {
+	dashFields := strings.FieldsFunc(cov, func(c rune) bool { return c == '-' })
+
+	if len(dashFields) == 1 || len(dashFields) == 2 {
+		// if dashFields came up empty, but the second parsed piece is not, it should be
+		// a version. use it
+		// it could also be a version with a '-' like v1.0.0-rc1
+		// in which case it should also be kept
+
+		// despite it being idiomatic to go modules, the +incompatible is a bit
+		// unsightly in release notes. Let's cut it out of the version if it
+		// exists
+		if incpIdx := strings.Index(cov, "+incompatible"); incpIdx > 0 {
+			return cov[:incpIdx]
+		}
+		return cov
+	} else if len(dashFields) == 3 {
+		// If there are three fields, use the last (the commit)
+		// as often the version found in the first field is just a placeholder
+		return dashFields[2]
+	}
+	return ""
+}
+
+func parseVendorConfDependencies(r io.Reader) ([]dependency, error) {
 	var deps []dependency
 	s := bufio.NewScanner(r)
 	for s.Scan() {
-		ln := strings.TrimSpace(s.Text())
-		if strings.HasPrefix(ln, "#") || ln == "" {
+		ln := sanitizeLine(s.Text(), "#")
+		if ln == "" {
 			continue
 		}
-		cidx := strings.Index(ln, "#")
-		if cidx > 0 {
-			ln = ln[:cidx]
-		}
-		ln = strings.TrimSpace(ln)
 		parts := strings.Fields(ln)
 		if len(parts) != 2 && len(parts) != 3 {
 			return nil, fmt.Errorf("invalid config format: %s", ln)
@@ -75,9 +177,15 @@ func parseDependencies(r io.Reader) ([]dependency, error) {
 			cloneURL = "git://" + parts[0]
 		}
 
+		// trim the commit to 12 characters to match go mod length
+		commitOrVersion := parts[1]
+		if matched, _ := regexp.Match(`[0-9a-f]{40}`, []byte(commitOrVersion)); matched {
+			commitOrVersion = commitOrVersion[:12]
+		}
+
 		deps = append(deps, dependency{
 			Name:     parts[0],
-			Commit:   parts[1],
+			Commit:   commitOrVersion,
 			CloneURL: cloneURL,
 		})
 	}
@@ -85,14 +193,6 @@ func parseDependencies(r io.Reader) ([]dependency, error) {
 		return nil, err
 	}
 	return deps, nil
-}
-
-func getPreviousDeps(previous string) ([]dependency, error) {
-	r, err := fileFromRev(previous, vendorConf)
-	if err != nil {
-		return nil, err
-	}
-	return parseDependencies(r)
 }
 
 func changelog(previous, commit string) ([]change, error) {
