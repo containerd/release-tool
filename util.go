@@ -66,10 +66,54 @@ func parseDependencies(commit string) ([]dependency, error) {
 }
 
 func parseGoModDependencies(r io.Reader) ([]dependency, error) {
-	var deps []dependency
+	var err error
+
+	depMap := make(map[string]*dependency)
+	replaceMap := make(map[string]string)
 	s := bufio.NewScanner(r)
-	// parse the require section
-	foundRequire := false
+	for s.Scan() {
+		ln := sanitizeLine(s.Text(), "//")
+		if ln == "" {
+			continue
+		}
+		parts := strings.Fields(ln)
+
+		// scan the file until we find `$DIRECTIVE (`
+		if len(parts) == 2 && parts[1] == "(" {
+			if parts[0] == "require" {
+				depMap, err = processRequiresSection(s)
+				if err != nil {
+					return nil, err
+				}
+			} else if parts[0] == "replace" {
+				replaceMap, err = processReplaceSection(s)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+	if err := s.Err(); err != nil {
+		return nil, err
+	}
+	for depName, version := range replaceMap {
+		if oldDep, ok := depMap[depName]; ok {
+			oldDep.Commit = version
+		} else {
+			logrus.Debugf("dependency %s found in replace section, but doesn't exist in requires section. Skipping", depName)
+			continue
+		}
+	}
+	var deps []dependency
+	for _, dep := range depMap {
+		deps = append(deps, *dep)
+	}
+
+	return deps, nil
+}
+
+func processReplaceSection(s *bufio.Scanner) (map[string]string, error) {
+	replaceMap := make(map[string]string)
 	for s.Scan() {
 		ln := sanitizeLine(s.Text(), "//")
 		if ln == "" {
@@ -77,15 +121,35 @@ func parseGoModDependencies(r io.Reader) ([]dependency, error) {
 		}
 		parts := strings.Fields(ln)
 		numParts := len(parts)
-
-		// scan the file until we find `require (`, the beginning of the dependencies
-		if !foundRequire && numParts == 2 {
-			if parts[0] == "require" && parts[1] == "(" {
-				// we've made it to the requires section
-				foundRequire = true
+		if numParts != 4 {
+			if numParts == 1 && parts[0] == ")" {
+				// this is the end of the requires section, break out to process the others
+				break
 			}
+			return nil, fmt.Errorf("invalid config format: %s", ln)
+		}
+
+		commitOrVersion := getCommitOrVersion(parts[3])
+		if commitOrVersion == "" {
+			return nil, fmt.Errorf("invalid go.mod file, poorly formatted version in replace section %s", parts[3])
+		}
+		replaceMap[parts[0]] = commitOrVersion
+	}
+	if err := s.Err(); err != nil {
+		return nil, err
+	}
+	return replaceMap, nil
+}
+
+func processRequiresSection(s *bufio.Scanner) (map[string]*dependency, error) {
+	depMap := make(map[string]*dependency)
+	for s.Scan() {
+		ln := sanitizeLine(s.Text(), "//")
+		if ln == "" {
 			continue
 		}
+		parts := strings.Fields(ln)
+		numParts := len(parts)
 
 		if numParts != 2 {
 			if numParts == 1 && parts[0] == ")" {
@@ -95,25 +159,21 @@ func parseGoModDependencies(r io.Reader) ([]dependency, error) {
 			return nil, fmt.Errorf("invalid config format: %s", ln)
 		}
 
-		// parse the commit or version. It'll either be of the form
-		// v0.0.0 or v0.0.0-date-commitID. Split by '-' to check
 		commitOrVersion := getCommitOrVersion(parts[1])
 		if commitOrVersion == "" {
-			return nil, fmt.Errorf("invalid go.mod file, poorly formatted version in requires section %s", parts[1])
+			return nil, fmt.Errorf("invalid go.mod file, poorly formatted version in require section %s", parts[1])
 		}
 
-		deps = append(deps, dependency{
+		depMap[parts[0]] = &dependency{
 			Name:     parts[0],
 			Commit:   commitOrVersion,
 			CloneURL: "git://" + parts[0],
-		})
+		}
 	}
 	if err := s.Err(); err != nil {
 		return nil, err
 	}
-
-	// TODO incorporate the replace section
-	return deps, nil
+	return depMap, nil
 }
 
 func sanitizeLine(line, commentDelim string) string {
@@ -134,6 +194,8 @@ func sanitizeLine(line, commentDelim string) string {
 }
 
 func getCommitOrVersion(cov string) string {
+	// parse the commit or version. It'll either be of the form
+	// v0.0.0 or v0.0.0-date-commitID. Split by '-' to check
 	dashFields := strings.FieldsFunc(cov, func(c rune) bool { return c == '-' })
 
 	if len(dashFields) == 1 || len(dashFields) == 2 {
