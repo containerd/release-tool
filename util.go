@@ -35,11 +35,16 @@ import (
 	"github.com/urfave/cli"
 )
 
-const vendorConf = "vendor.conf"
-const modulesTxt = "vendor/modules.txt"
-const goMod = "go.mod"
+const (
+	vendorConf = "vendor.conf"
+	modulesTxt = "vendor/modules.txt"
+	goMod      = "go.mod"
+)
 
-var ErrUnknownFormat = errors.New("unknown file format")
+var (
+	ErrUnknownFormat = errors.New("unknown file format")
+	ErrEndOfSection  = errors.New("End of directive section")
+)
 
 func loadRelease(path string) (*release, error) {
 	var r release
@@ -116,17 +121,38 @@ func parseGoModDependencies(r io.Reader) ([]dependency, error) {
 		parts := strings.Fields(ln)
 
 		// scan the file until we find `$DIRECTIVE (`
-		if len(parts) == 2 && parts[1] == "(" {
-			if parts[0] == "require" {
-				depMap, err = processRequiresSection(s)
+		if parts[0] == "require" {
+			if len(parts) < 2 {
+				return nil, errors.Wrapf(ErrUnknownFormat, "%s", ln)
+			}
+			if parts[1] == "(" {
+				depMap, err = processRequireSection(s, depMap)
 				if err != nil {
 					return nil, err
 				}
-			} else if parts[0] == "replace" {
-				replaceMap, err = processReplaceSection(s)
+			} else {
+				dep, err := processRequireLine(parts[1:])
 				if err != nil {
 					return nil, err
 				}
+				depMap[dep.Name] = dep
+			}
+		}
+		if parts[0] == "replace" {
+			if len(parts) < 2 {
+				return nil, errors.Wrapf(ErrUnknownFormat, "%s", ln)
+			}
+			if parts[1] == "(" {
+				replaceMap, err = processReplaceSection(s, replaceMap)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				name, commitOrVersion, err := processReplaceLine(parts[1:])
+				if err != nil {
+					return nil, err
+				}
+				replaceMap[name] = commitOrVersion
 			}
 		}
 	}
@@ -149,28 +175,62 @@ func parseGoModDependencies(r io.Reader) ([]dependency, error) {
 	return deps, nil
 }
 
-func processReplaceSection(s *bufio.Scanner) (map[string]string, error) {
-	replaceMap := make(map[string]string)
+func processRequireSection(s *bufio.Scanner, depMap map[string]*dependency) (map[string]*dependency, error) {
 	for s.Scan() {
 		ln := sanitizeLine(s.Text(), "//")
 		if ln == "" {
 			continue
 		}
-		parts := strings.Fields(ln)
-		numParts := len(parts)
-		if numParts != 4 {
-			if numParts == 1 && parts[0] == ")" {
-				// this is the end of the requires section, break out to process the others
+		dep, err := processRequireLine(strings.Fields(ln))
+		if err != nil {
+			if errors.Cause(err) == ErrEndOfSection {
 				break
 			}
-			return nil, errors.Wrapf(ErrUnknownFormat, "%s", ln)
+			return nil, err
+		}
+		depMap[dep.Name] = dep
+	}
+	if err := s.Err(); err != nil {
+		return nil, err
+	}
+	return depMap, nil
+}
+
+func processRequireLine(parts []string) (*dependency, error) {
+	numParts := len(parts)
+
+	if numParts != 2 {
+		if numParts == 1 && parts[0] == ")" {
+			return nil, ErrEndOfSection
+		}
+		return nil, errors.Wrapf(ErrUnknownFormat, "%v", parts)
+	}
+
+	commitOrVersion := getCommitOrVersion(parts[1])
+	if commitOrVersion == "" {
+		return nil, errors.Wrapf(ErrUnknownFormat, "poorly formatted version in replace section %s", parts[2])
+	}
+
+	dep := formatDependency(parts[0], commitOrVersion)
+	return &dep, nil
+}
+
+func processReplaceSection(s *bufio.Scanner, replaceMap map[string]string) (map[string]string, error) {
+	for s.Scan() {
+		ln := sanitizeLine(s.Text(), "//")
+		if ln == "" {
+			continue
 		}
 
-		commitOrVersion := getCommitOrVersion(parts[3])
-		if commitOrVersion == "" {
-			return nil, errors.Wrapf(ErrUnknownFormat, "poorly formatted version in replace section %s", parts[2])
+		name, commitOrVersion, err := processReplaceLine(strings.Fields(ln))
+		if err != nil {
+			if errors.Cause(err) == ErrEndOfSection {
+				break
+			}
+			return nil, err
 		}
-		replaceMap[parts[0]] = commitOrVersion
+
+		replaceMap[name] = commitOrVersion
 	}
 	if err := s.Err(); err != nil {
 		return nil, err
@@ -178,36 +238,21 @@ func processReplaceSection(s *bufio.Scanner) (map[string]string, error) {
 	return replaceMap, nil
 }
 
-func processRequiresSection(s *bufio.Scanner) (map[string]*dependency, error) {
-	depMap := make(map[string]*dependency)
-	for s.Scan() {
-		ln := sanitizeLine(s.Text(), "//")
-		if ln == "" {
-			continue
+func processReplaceLine(parts []string) (string, string, error) {
+	numParts := len(parts)
+	if numParts != 4 {
+		if numParts == 1 && parts[0] == ")" {
+			// this is the end of the requires section, break out to process the others
+			return "", "", ErrEndOfSection
 		}
-		parts := strings.Fields(ln)
-		numParts := len(parts)
-
-		if numParts != 2 {
-			if numParts == 1 && parts[0] == ")" {
-				// this is the end of the requires section, break out to process the others
-				break
-			}
-			return nil, errors.Wrapf(ErrUnknownFormat, "%s", ln)
-		}
-
-		commitOrVersion := getCommitOrVersion(parts[1])
-		if commitOrVersion == "" {
-			return nil, errors.Wrapf(ErrUnknownFormat, "poorly formatted version in replace section %s", parts[2])
-		}
-
-		dep := formatDependency(parts[0], commitOrVersion)
-		depMap[parts[0]] = &dep
+		return "", "", errors.Wrapf(ErrUnknownFormat, "%v", parts)
 	}
-	if err := s.Err(); err != nil {
-		return nil, err
+
+	commitOrVersion := getCommitOrVersion(parts[3])
+	if commitOrVersion == "" {
+		return "", "", errors.Wrapf(ErrUnknownFormat, "poorly formatted version in replace section %s", parts[2])
 	}
-	return depMap, nil
+	return parts[0], commitOrVersion, nil
 }
 
 func sanitizeLine(line, commentDelim string) string {
