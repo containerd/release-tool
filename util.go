@@ -42,8 +42,8 @@ const (
 )
 
 var (
-	ErrUnknownFormat = errors.New("unknown file format")
-	ErrEndOfSection  = errors.New("End of directive section")
+	errUnknownFormat = errors.New("unknown file format")
+	errEndOfSection  = errors.New("End of directive section")
 )
 
 func loadRelease(path string) (*release, error) {
@@ -66,15 +66,15 @@ func parseDependencies(commit string) ([]dependency, error) {
 	if err == nil {
 		return parseVendorConfDependencies(rd)
 	}
-	rd, err2 := fileFromRev(commit, modulesTxt)
-	if err2 == nil {
+	rd, err = fileFromRev(commit, modulesTxt)
+	if err == nil {
 		return parseModulesTxtDependencies(rd)
 	}
-	rd, err3 := fileFromRev(commit, goMod)
-	if err3 == nil {
+	rd, err = fileFromRev(commit, goMod)
+	if err == nil {
 		return parseGoModDependencies(rd)
 	}
-	return nil, errors.Errorf("finding dependency file failed. vendor.conf error: %v, modules.txt error: %v, go.mod error: %v", err, err2, err3)
+	return nil, errors.Errorf("finding dependency file failed: %v", err)
 }
 
 func parseModulesTxtDependencies(r io.Reader) ([]dependency, error) {
@@ -95,11 +95,11 @@ func parseModulesTxtDependencies(r io.Reader) ([]dependency, error) {
 		} else if len(parts) == 6 && parts[3] == "=>" {
 			commitOrVersionPart = parts[5]
 		} else {
-			return nil, errors.Wrapf(ErrUnknownFormat, "%s", ln)
+			return nil, errors.Wrapf(errUnknownFormat, "%s", ln)
 		}
 		commitOrVersion := getCommitOrVersion(commitOrVersionPart)
 		if commitOrVersion == "" {
-			return nil, errors.Wrapf(ErrUnknownFormat, "poorly formatted version in replace section %s", parts[2])
+			return nil, errors.Wrapf(errUnknownFormat, "poorly formatted version in replace section %s", parts[2])
 		}
 
 		dependencies = append(dependencies, formatDependency(parts[1], commitOrVersion))
@@ -123,7 +123,7 @@ func parseGoModDependencies(r io.Reader) ([]dependency, error) {
 		// scan the file until we find `$DIRECTIVE (`
 		if parts[0] == "require" {
 			if len(parts) < 2 {
-				return nil, errors.Wrapf(ErrUnknownFormat, "%s", ln)
+				return nil, errors.Wrapf(errUnknownFormat, "%s", ln)
 			}
 			if parts[1] == "(" {
 				depMap, err = processRequireSection(s, depMap)
@@ -140,7 +140,7 @@ func parseGoModDependencies(r io.Reader) ([]dependency, error) {
 		}
 		if parts[0] == "replace" {
 			if len(parts) < 2 {
-				return nil, errors.Wrapf(ErrUnknownFormat, "%s", ln)
+				return nil, errors.Wrapf(errUnknownFormat, "%s", ln)
 			}
 			if parts[1] == "(" {
 				replaceMap, err = processReplaceSection(s, replaceMap)
@@ -183,7 +183,7 @@ func processRequireSection(s *bufio.Scanner, depMap map[string]*dependency) (map
 		}
 		dep, err := processRequireLine(strings.Fields(ln))
 		if err != nil {
-			if errors.Cause(err) == ErrEndOfSection {
+			if errors.Cause(err) == errEndOfSection {
 				break
 			}
 			return nil, err
@@ -201,14 +201,14 @@ func processRequireLine(parts []string) (*dependency, error) {
 
 	if numParts != 2 {
 		if numParts == 1 && parts[0] == ")" {
-			return nil, ErrEndOfSection
+			return nil, errEndOfSection
 		}
-		return nil, errors.Wrapf(ErrUnknownFormat, "%v", parts)
+		return nil, errors.Wrapf(errUnknownFormat, "%v", parts)
 	}
 
 	commitOrVersion := getCommitOrVersion(parts[1])
 	if commitOrVersion == "" {
-		return nil, errors.Wrapf(ErrUnknownFormat, "poorly formatted version in replace section %s", parts[2])
+		return nil, errors.Wrapf(errUnknownFormat, "poorly formatted version in replace section %s", parts[2])
 	}
 
 	dep := formatDependency(parts[0], commitOrVersion)
@@ -224,7 +224,7 @@ func processReplaceSection(s *bufio.Scanner, replaceMap map[string]string) (map[
 
 		name, commitOrVersion, err := processReplaceLine(strings.Fields(ln))
 		if err != nil {
-			if errors.Cause(err) == ErrEndOfSection {
+			if errors.Cause(err) == errEndOfSection {
 				break
 			}
 			return nil, err
@@ -243,14 +243,14 @@ func processReplaceLine(parts []string) (string, string, error) {
 	if numParts != 4 {
 		if numParts == 1 && parts[0] == ")" {
 			// this is the end of the requires section, break out to process the others
-			return "", "", ErrEndOfSection
+			return "", "", errEndOfSection
 		}
-		return "", "", errors.Wrapf(ErrUnknownFormat, "%v", parts)
+		return "", "", errors.Wrapf(errUnknownFormat, "%v", parts)
 	}
 
 	commitOrVersion := getCommitOrVersion(parts[3])
 	if commitOrVersion == "" {
-		return "", "", errors.Wrapf(ErrUnknownFormat, "poorly formatted version in replace section %s", parts[2])
+		return "", "", errors.Wrapf(errUnknownFormat, "poorly formatted version in replace section %s", parts[2])
 	}
 	return parts[0], commitOrVersion, nil
 }
@@ -276,26 +276,29 @@ func getCommitOrVersion(cov string) string {
 	// parse the commit or version. It'll either be of the form
 	// v0.0.0 or v0.0.0-date-commitID. Split by '-' to check
 	dashFields := strings.FieldsFunc(cov, func(c rune) bool { return c == '-' })
+	fieldsLen := len(dashFields)
 
-	if len(dashFields) == 1 || len(dashFields) == 2 {
-		// if dashFields came up empty, but the second parsed piece is not, it should be
-		// a version. use it
-		// it could also be a version with a '-' like v1.0.0-rc1
-		// in which case it should also be kept
+	if fieldsLen > 3 {
+		// empty string signifies error to caller
+		return ""
+	}
 
-		// despite it being idiomatic to go modules, the +incompatible is a bit
-		// unsightly in release notes. Let's cut it out of the version if it
-		// exists
-		if incpIdx := strings.Index(cov, "+incompatible"); incpIdx > 0 {
-			return cov[:incpIdx]
-		}
-		return cov
-	} else if len(dashFields) == 3 {
+	// if dashFields has one or two fields, it is likely a version (possibly with a -rc1).
+	// Thus, it should be used as is.
+	// the only case we meddle is when there are three fields, so we can strip the commitID
+	if len(dashFields) == 3 {
 		// If there are three fields, use the last (the commit)
 		// as often the version found in the first field is just a placeholder
-		return dashFields[2]
+		cov = dashFields[2]
 	}
-	return ""
+
+	// despite it being idiomatic to go modules, the +incompatible is a bit
+	// unsightly in release notes. Let's cut it out of the version if it
+	// exists
+	if incpIdx := strings.Index(cov, "+incompatible"); incpIdx > 0 {
+		return cov[:incpIdx]
+	}
+	return cov
 }
 
 func formatDependency(name, commitOrVersion string) dependency {
