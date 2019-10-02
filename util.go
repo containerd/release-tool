@@ -36,7 +36,10 @@ import (
 )
 
 const vendorConf = "vendor.conf"
+const modulesTxt = "vendor/modules.txt"
 const goMod = "go.mod"
+
+var ErrUnknownFormat = errors.New("unknown file format")
 
 func loadRelease(path string) (*release, error) {
 	var r release
@@ -58,11 +61,45 @@ func parseDependencies(commit string) ([]dependency, error) {
 	if err == nil {
 		return parseVendorConfDependencies(rd)
 	}
-	rd, err2 := fileFromRev(commit, goMod)
+	rd, err2 := fileFromRev(commit, modulesTxt)
 	if err2 == nil {
+		return parseModulesTxtDependencies(rd)
+	}
+	rd, err3 := fileFromRev(commit, goMod)
+	if err3 == nil {
 		return parseGoModDependencies(rd)
 	}
-	return nil, errors.Errorf("finding current dep file failed. vendor.conf error: %v, go.mod error: %v", err, err2)
+	return nil, errors.Errorf("finding dependency file failed. vendor.conf error: %v, modules.txt error: %v, go.mod error: %v", err, err2, err3)
+}
+
+func parseModulesTxtDependencies(r io.Reader) ([]dependency, error) {
+	var dependencies []dependency
+	s := bufio.NewScanner(r)
+	for s.Scan() {
+		ln := strings.TrimSpace(s.Text())
+		if ln == "" {
+			continue
+		}
+		parts := strings.Fields(ln)
+		if parts[0] != "#" {
+			continue
+		}
+		var commitOrVersionPart string
+		if len(parts) == 3 {
+			commitOrVersionPart = parts[2]
+		} else if len(parts) == 6 && parts[3] == "=>" {
+			commitOrVersionPart = parts[5]
+		} else {
+			return nil, errors.Wrapf(ErrUnknownFormat, "%s", ln)
+		}
+		commitOrVersion := getCommitOrVersion(commitOrVersionPart)
+		if commitOrVersion == "" {
+			return nil, errors.Wrapf(ErrUnknownFormat, "poorly formatted version in replace section %s", parts[2])
+		}
+
+		dependencies = append(dependencies, formatDependency(parts[1], commitOrVersion))
+	}
+	return dependencies, nil
 }
 
 func parseGoModDependencies(r io.Reader) ([]dependency, error) {
@@ -126,12 +163,12 @@ func processReplaceSection(s *bufio.Scanner) (map[string]string, error) {
 				// this is the end of the requires section, break out to process the others
 				break
 			}
-			return nil, fmt.Errorf("invalid config format: %s", ln)
+			return nil, errors.Wrapf(ErrUnknownFormat, "%s", ln)
 		}
 
 		commitOrVersion := getCommitOrVersion(parts[3])
 		if commitOrVersion == "" {
-			return nil, fmt.Errorf("invalid go.mod file, poorly formatted version in replace section %s", parts[3])
+			return nil, errors.Wrapf(ErrUnknownFormat, "poorly formatted version in replace section %s", parts[2])
 		}
 		replaceMap[parts[0]] = commitOrVersion
 	}
@@ -156,19 +193,16 @@ func processRequiresSection(s *bufio.Scanner) (map[string]*dependency, error) {
 				// this is the end of the requires section, break out to process the others
 				break
 			}
-			return nil, fmt.Errorf("invalid config format: %s", ln)
+			return nil, errors.Wrapf(ErrUnknownFormat, "%s", ln)
 		}
 
 		commitOrVersion := getCommitOrVersion(parts[1])
 		if commitOrVersion == "" {
-			return nil, fmt.Errorf("invalid go.mod file, poorly formatted version in require section %s", parts[1])
+			return nil, errors.Wrapf(ErrUnknownFormat, "poorly formatted version in replace section %s", parts[2])
 		}
 
-		depMap[parts[0]] = &dependency{
-			Name:     parts[0],
-			Commit:   commitOrVersion,
-			CloneURL: "git://" + parts[0],
-		}
+		dep := formatDependency(parts[0], commitOrVersion)
+		depMap[parts[0]] = &dep
 	}
 	if err := s.Err(); err != nil {
 		return nil, err
@@ -217,6 +251,14 @@ func getCommitOrVersion(cov string) string {
 		return dashFields[2]
 	}
 	return ""
+}
+
+func formatDependency(name, commitOrVersion string) dependency {
+	return dependency{
+		Name:     name,
+		Commit:   commitOrVersion,
+		CloneURL: "git://" + name,
+	}
 }
 
 func parseVendorConfDependencies(r io.Reader) ([]dependency, error) {
