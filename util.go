@@ -311,6 +311,11 @@ func formatDependency(name, commitOrVersion string) dependency {
 
 func parseVendorConfDependencies(r io.Reader) ([]dependency, error) {
 	var deps []dependency
+	re, err := regexp.Compile("[0-9a-f]{40}")
+	if err != nil {
+		return nil, err
+	}
+
 	s := bufio.NewScanner(r)
 	for s.Scan() {
 		ln := sanitizeLine(s.Text(), "#")
@@ -331,7 +336,7 @@ func parseVendorConfDependencies(r io.Reader) ([]dependency, error) {
 
 		// trim the commit to 12 characters to match go mod length
 		commitOrVersion := parts[1]
-		if matched, _ := regexp.Match(`[0-9a-f]{40}`, []byte(commitOrVersion)); matched {
+		if matched := re.Match([]byte(commitOrVersion)); matched {
 			commitOrVersion = commitOrVersion[:12]
 		}
 

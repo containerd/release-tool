@@ -10,6 +10,7 @@ install:
   - go get -u github.com/vbatts/git-validation
   - go get -u github.com/kunalkushwaha/ltag
   - go get -u github.com/LK4D4/vndr
+  - go get -u github.com/golangci/golangci-lint/cmd/golangci-lint
 
 before_script:
   - pushd ..; git clone https://github.com/containerd/project; popd
@@ -18,4 +19,5 @@ script:
   - DCO_VERBOSITY=-q ../project/script/validate/dco
   - ../project/script/validate/fileheader ../project/
   - ../project/script/validate/vendor
+  - GOGC=75 golangci-lint run
   - go build -o release-tool github.com/containerd/release-tool
