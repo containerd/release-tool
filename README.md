@@ -1,5 +1,7 @@
 # release-tool
 
+[![Build Status](https://travis-ci.org/containerd/release-tool.svg?branch=master)](https://travis-ci.org/containerd/release-tool)
+
 A release tool for generating detailed release notes
 
 The `release-tool` utility is maintained as a separate repository
