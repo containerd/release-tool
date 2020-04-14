@@ -52,7 +52,7 @@ https://github.com/{{.GithubRepo}}/issues.
 
 ### Dependency Changes
 {{range $dep := .Dependencies}}
-* **{{$dep.Name}}**	{{if $dep.Previous}}{{$dep.Previous}} -> {{$dep.Commit}}{{else}}{{$dep.Commit}} **_new_**{{end}}
+* **{{$dep.Name}}**	{{if $dep.Previous}}{{$dep.Previous}} -> {{$dep.Ref}}{{else}}{{$dep.Ref}} **_new_**{{end}}
 {{- end}}
 
 Previous release can be found at [{{.Previous}}](https://github.com/{{.GithubRepo}}/releases/tag/{{.Previous}})

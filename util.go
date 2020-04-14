@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,6 +34,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
+	"golang.org/x/net/html"
 )
 
 const (
@@ -97,12 +99,12 @@ func parseModulesTxtDependencies(r io.Reader) ([]dependency, error) {
 		} else {
 			return nil, errors.Wrapf(errUnknownFormat, "%s", ln)
 		}
-		commitOrVersion := getCommitOrVersion(commitOrVersionPart)
+		commitOrVersion, isSha := getCommitOrVersion(commitOrVersionPart)
 		if commitOrVersion == "" {
 			return nil, errors.Wrapf(errUnknownFormat, "poorly formatted version in replace section %s", parts[2])
 		}
 
-		dependencies = append(dependencies, formatDependency(parts[1], commitOrVersion))
+		dependencies = append(dependencies, formatDependency(parts[1], commitOrVersion, isSha))
 	}
 	return dependencies, nil
 }
@@ -111,7 +113,7 @@ func parseGoModDependencies(r io.Reader) ([]dependency, error) {
 	var err error
 
 	depMap := make(map[string]*dependency)
-	replaceMap := make(map[string]string)
+	replaceMap := make(map[string]*dependency)
 	s := bufio.NewScanner(r)
 	for s.Scan() {
 		ln := sanitizeLine(s.Text(), "//")
@@ -148,20 +150,22 @@ func parseGoModDependencies(r io.Reader) ([]dependency, error) {
 					return nil, err
 				}
 			} else {
-				name, commitOrVersion, err := processReplaceLine(parts[1:])
+				dep, err := processReplaceLine(parts[1:])
 				if err != nil {
 					return nil, err
 				}
-				replaceMap[name] = commitOrVersion
+				replaceMap[dep.Name] = dep
 			}
 		}
 	}
 	if err := s.Err(); err != nil {
 		return nil, err
 	}
-	for depName, version := range replaceMap {
+	for depName, dep := range replaceMap {
 		if oldDep, ok := depMap[depName]; ok {
-			oldDep.Commit = version
+			oldDep.Ref = dep.Ref
+			oldDep.Sha = dep.Sha
+			oldDep.GitURL = dep.GitURL
 		} else {
 			logrus.Debugf("dependency %s found in replace section, but doesn't exist in requires section. Skipping", depName)
 			continue
@@ -206,23 +210,23 @@ func processRequireLine(parts []string) (*dependency, error) {
 		return nil, errors.Wrapf(errUnknownFormat, "%v", parts)
 	}
 
-	commitOrVersion := getCommitOrVersion(parts[1])
+	commitOrVersion, isSha := getCommitOrVersion(parts[1])
 	if commitOrVersion == "" {
 		return nil, errors.Wrapf(errUnknownFormat, "poorly formatted version in replace section %s", parts[2])
 	}
 
-	dep := formatDependency(parts[0], commitOrVersion)
+	dep := formatDependency(parts[0], commitOrVersion, isSha)
 	return &dep, nil
 }
 
-func processReplaceSection(s *bufio.Scanner, replaceMap map[string]string) (map[string]string, error) {
+func processReplaceSection(s *bufio.Scanner, replaceMap map[string]*dependency) (map[string]*dependency, error) {
 	for s.Scan() {
 		ln := sanitizeLine(s.Text(), "//")
 		if ln == "" {
 			continue
 		}
 
-		name, commitOrVersion, err := processReplaceLine(strings.Fields(ln))
+		dep, err := processReplaceLine(strings.Fields(ln))
 		if err != nil {
 			if errors.Cause(err) == errEndOfSection {
 				break
@@ -230,7 +234,7 @@ func processReplaceSection(s *bufio.Scanner, replaceMap map[string]string) (map[
 			return nil, err
 		}
 
-		replaceMap[name] = commitOrVersion
+		replaceMap[dep.Name] = dep
 	}
 	if err := s.Err(); err != nil {
 		return nil, err
@@ -238,21 +242,22 @@ func processReplaceSection(s *bufio.Scanner, replaceMap map[string]string) (map[
 	return replaceMap, nil
 }
 
-func processReplaceLine(parts []string) (string, string, error) {
+func processReplaceLine(parts []string) (*dependency, error) {
 	numParts := len(parts)
 	if numParts != 4 {
 		if numParts == 1 && parts[0] == ")" {
 			// this is the end of the requires section, break out to process the others
-			return "", "", errEndOfSection
+			return nil, errEndOfSection
 		}
-		return "", "", errors.Wrapf(errUnknownFormat, "%v", parts)
+		return nil, errors.Wrapf(errUnknownFormat, "%v", parts)
 	}
 
-	commitOrVersion := getCommitOrVersion(parts[3])
+	commitOrVersion, isSha := getCommitOrVersion(parts[3])
 	if commitOrVersion == "" {
-		return "", "", errors.Wrapf(errUnknownFormat, "poorly formatted version in replace section %s", parts[2])
+		return nil, errors.Wrapf(errUnknownFormat, "poorly formatted version in replace section %s", parts[2])
 	}
-	return parts[0], commitOrVersion, nil
+	dep := formatDependency(parts[0], commitOrVersion, isSha)
+	return &dep, nil
 }
 
 func sanitizeLine(line, commentDelim string) string {
@@ -272,7 +277,9 @@ func sanitizeLine(line, commentDelim string) string {
 	return strings.TrimSpace(ln)
 }
 
-func getCommitOrVersion(cov string) string {
+// getCommitOrVersion parses the commit or version from go modules
+// and returns the commit sha or ref and whether the result is a git sha
+func getCommitOrVersion(cov string) (string, bool) {
 	// parse the commit or version. It'll either be of the form
 	// v0.0.0 or v0.0.0-date-commitID. Split by '-' to check
 	dashFields := strings.FieldsFunc(cov, func(c rune) bool { return c == '-' })
@@ -280,8 +287,10 @@ func getCommitOrVersion(cov string) string {
 
 	if fieldsLen > 3 {
 		// empty string signifies error to caller
-		return ""
+		return "", false
 	}
+
+	var isSha bool
 
 	// if dashFields has one or two fields, it is likely a version (possibly with a -rc1).
 	// Thus, it should be used as is.
@@ -290,23 +299,50 @@ func getCommitOrVersion(cov string) string {
 		// If there are three fields, use the last (the commit)
 		// as often the version found in the first field is just a placeholder
 		cov = dashFields[2]
+		isSha = true
 	}
 
 	// despite it being idiomatic to go modules, the +incompatible is a bit
 	// unsightly in release notes. Let's cut it out of the version if it
 	// exists
 	if incpIdx := strings.Index(cov, "+incompatible"); incpIdx > 0 {
-		return cov[:incpIdx]
+		return cov[:incpIdx], isSha
 	}
-	return cov
+	return cov, isSha
 }
 
-func formatDependency(name, commitOrVersion string) dependency {
-	return dependency{
-		Name:     name,
-		Commit:   commitOrVersion,
-		CloneURL: "git://" + name,
+func formatDependency(name, commitOrVersion string, isSha bool) dependency {
+	var sha string
+	if isSha {
+		sha = commitOrVersion
 	}
+	return dependency{
+		Name:   name,
+		Ref:    commitOrVersion,
+		Sha:    sha,
+		GitURL: getGitURL(name),
+	}
+}
+
+// getGitURL gets known git clone URLs from names
+// If an empty string is returned, then this must
+// be checked using `?go-get=1`
+func getGitURL(name string) string {
+	if idx := strings.Index(name, "/"); idx > 0 {
+		switch name[:idx] {
+		case "github.com":
+			return "git://" + name
+		case "k8s.io":
+			return "git://github.com/kubernetes" + name[idx:]
+		case "sigs.k8s.io":
+			return "git://github.com/kubernetes-sigs" + name[idx:]
+		case "gopkg.in":
+			// gopkg.in/pkg.v3      → github.com/go-pkg/pkg (branch/tag v3, v3.N, or v3.N.M)
+			// gopkg.in/user/pkg.v3 → github.com/user/pkg   (branch/tag v3, v3.N, or v3.N.M)
+		case "golang.org":
+		}
+	}
+	return ""
 }
 
 func parseVendorConfDependencies(r io.Reader) ([]dependency, error) {
@@ -327,23 +363,26 @@ func parseVendorConfDependencies(r io.Reader) ([]dependency, error) {
 			return nil, fmt.Errorf("invalid config format: %s", ln)
 		}
 
-		var cloneURL string
+		var gitURL string
 		if len(parts) == 3 {
-			cloneURL = parts[2]
+			gitURL = parts[2]
 		} else {
-			cloneURL = "git://" + parts[0]
+			gitURL = getGitURL(parts[0])
 		}
 
 		// trim the commit to 12 characters to match go mod length
 		commitOrVersion := parts[1]
+		var sha string
 		if matched := re.Match([]byte(commitOrVersion)); matched {
 			commitOrVersion = commitOrVersion[:12]
+			sha = commitOrVersion
 		}
 
 		deps = append(deps, dependency{
-			Name:     parts[0],
-			Commit:   commitOrVersion,
-			CloneURL: cloneURL,
+			Name:   parts[0],
+			Ref:    commitOrVersion,
+			Sha:    sha,
+			GitURL: gitURL,
 		})
 	}
 	if err := s.Err(); err != nil {
@@ -409,6 +448,43 @@ func parseChangelog(changelog []byte) ([]change, error) {
 	return changes, nil
 }
 
+func getSha(gitURL, rev string) (string, error) {
+	logrus.Debugf("git ls-remote %s %s %s^{}", gitURL, rev, rev)
+	b, err := git("ls-remote", gitURL, rev, rev+"^{}")
+	if err != nil {
+		return "", nil
+	}
+
+	var (
+		s        = bufio.NewScanner(bytes.NewReader(b))
+		sha      string
+		resolved bool
+	)
+
+	for s.Scan() {
+		fields := strings.Fields(s.Text())
+		if len(fields) != 2 {
+			continue
+		}
+		if strings.HasSuffix(fields[1], "^{}") {
+			resolved = true
+		} else if resolved {
+			continue
+		}
+		sha = fields[0]
+		if len(sha) > 12 {
+			sha = sha[:12]
+		}
+	}
+	if err := s.Err(); err != nil {
+		return "", err
+	}
+	if sha == "" {
+		return "", errors.New("revision not found")
+	}
+	return sha, nil
+}
+
 func fileFromRev(rev, file string) (io.Reader, error) {
 	p, err := git("show", fmt.Sprintf("%s:%s", rev, file))
 	if err != nil {
@@ -456,10 +532,18 @@ func renameDependencies(deps []dependency, renames map[string]projectRename) {
 	}
 }
 
-func updatedDeps(previous, deps []dependency) []dependency {
+func updatedDeps(previous, deps []dependency, ignored []string) ([]dependency, error) {
 	var updated []dependency
 	pm, cm := toDepMap(previous), toDepMap(deps)
+	ignoreMap := map[string]struct{}{}
+	for _, name := range ignored {
+		ignoreMap[name] = struct{}{}
+	}
+
 	for name, c := range cm {
+		if _, ok := ignoreMap[name]; ok {
+			continue
+		}
 		d, ok := pm[name]
 		if !ok {
 			// it is a new dep and should be noted
@@ -467,13 +551,48 @@ func updatedDeps(previous, deps []dependency) []dependency {
 			continue
 		}
 		// it exists, see if its updated
-		if d.Commit != c.Commit {
-			// set the previous commit
-			c.Previous = d.Commit
-			updated = append(updated, c)
+		if d.Ref != c.Ref {
+			if d.Sha == "" {
+				if d.GitURL == "" {
+					gitURL, err := resolveGitURL(name)
+					if err != nil {
+						return nil, errors.Wrapf(err, "git url for %q", name)
+					}
+					d.GitURL = gitURL
+					if c.GitURL == "" {
+						c.GitURL = d.GitURL
+					}
+				}
+				sha, err := getSha(d.GitURL, d.Ref)
+				if err != nil {
+					return nil, errors.Wrapf(err, "failed to get sha for %q", name)
+				}
+				d.Sha = sha
+			}
+			if c.Sha == "" {
+				if c.GitURL == "" {
+					gitURL, err := resolveGitURL(name)
+					if err != nil {
+						return nil, errors.Wrapf(err, "git url for %q", name)
+					}
+					c.GitURL = gitURL
+				}
+				sha, err := getSha(c.GitURL, c.Ref)
+				if err != nil {
+					return nil, errors.Wrapf(err, "failed to get sha for %q", name)
+				}
+				c.Sha = sha
+			}
+
+			if d.Sha != c.Sha {
+				logrus.Debugf("Updated dependency: %q %s(%s) -> %s(%s)", d.Name, d.Ref, d.Sha, c.Ref, c.Sha)
+				// set the previous commit
+				c.Previous = d.Ref
+				updated = append(updated, c)
+			}
 		}
 	}
-	return updated
+	return updated, nil
 }
 
 func toDepMap(deps []dependency) map[string]dependency {
@@ -588,5 +707,42 @@ func githubPRLink(repo string) func(change) (string, error) {
 			return "", err
 		}
 		return message, nil
+	}
+}
+
+func resolveGitURL(name string) (string, error) {
+	resp, err := http.Get("https://" + name + "?go-get=1")
+	if err != nil {
+		return "", err
+	}
+
+	t := html.NewTokenizer(resp.Body)
+	for {
+		switch t.Next() {
+		case html.ErrorToken:
+			err := t.Err()
+			if err == nil {
+				err = errors.New("no go-import meta tag")
+			}
+			return "", err
+		case html.StartTagToken, html.SelfClosingTagToken:
+			var (
+				tok           = t.Token()
+				name, content string
+			)
+			for _, attr := range tok.Attr {
+				if attr.Key == "name" {
+					name = attr.Val
+				} else if attr.Key == "content" {
+					content = attr.Val
+				}
+			}
+			if name == "go-import" {
+				parts := strings.Fields(content)
+				if len(parts) == 3 && parts[1] == "git" {
+					return parts[2], nil
+				}
+			}
+		}
 	}
 }
