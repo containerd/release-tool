@@ -46,9 +46,10 @@ type change struct {
 
 type dependency struct {
 	Name     string
-	Commit   string
+	Ref      string
+	Sha      string
 	Previous string
-	CloneURL string
+	GitURL   string
 }
 
 type download struct {
@@ -79,6 +80,7 @@ type release struct {
 	// dependency options
 	MatchDeps  string                   `toml:"match_deps"`
 	RenameDeps map[string]projectRename `toml:"rename_deps"`
+	IgnoreDeps []string                 `toml:"ignore_deps"`
 
 	// generated fields
 	Changes      []projectChange
@@ -178,7 +180,10 @@ This tool should be ran from the root of the project repository for a new releas
 		}
 		renameDependencies(previous, r.RenameDeps)
 
-		updatedDeps := updatedDeps(previous, current)
+		updatedDeps, err := updatedDeps(previous, current, r.IgnoreDeps)
+		if err != nil {
+			return err
+		}
 
 		sort.Slice(updatedDeps, func(i, j int) bool {
 			return updatedDeps[i].Name < updatedDeps[j].Name
@@ -214,17 +219,17 @@ This tool should be ran from the root of the project repository for a new releas
 				if err := os.Chdir(td); err != nil {
 					return errors.Wrap(err, "unable to chdir to temp clone directory")
 				}
-				git("clone", dep.CloneURL, name)
+				git("clone", dep.GitURL, name)
 
 				if err := os.Chdir(name); err != nil {
 					return errors.Wrapf(err, "unable to chdir to cloned %s directory", name)
 				}
 
-				changes, err := changelog(dep.Previous, dep.Commit)
+				changes, err := changelog(dep.Previous, dep.Ref)
 				if err != nil {
 					return errors.Wrapf(err, "failed to get changelog for %s", name)
 				}
-				if err := addContributors(dep.Previous, dep.Commit, contributors); err != nil {
+				if err := addContributors(dep.Previous, dep.Ref, contributors); err != nil {
 					return errors.Wrapf(err, "failed to get authors for %s", name)
 				}
 				if linkify {
