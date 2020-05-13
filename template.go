@@ -51,10 +51,17 @@ https://github.com/{{.GithubRepo}}/issues.
 {{- end}}
 
 ### Dependency Changes
-{{range $dep := .Dependencies}}
+{{if .Dependencies}}
+{{- range $dep := .Dependencies}}
 * **{{$dep.Name}}**	{{if $dep.Previous}}{{$dep.Previous}} -> {{$dep.Ref}}{{else}}{{$dep.Ref}} **_new_**{{end}}
 {{- end}}
+{{- else}}
+This release has no dependency changes
+{{- end}}
+
+{{- if .Previous}}
 
 Previous release can be found at [{{.Previous}}](https://github.com/{{.GithubRepo}}/releases/tag/{{.Previous}})
+{{- end}}
 `
 )
