@@ -120,6 +120,11 @@ This tool should be ran from the root of the project repository for a new releas
 			Name:  "linkify,l",
 			Usage: "add links to changelog",
 		},
+		&cli.StringFlag{
+			Name:    "cache",
+			Usage:   "cache directory for static remote resources",
+			EnvVars: []string{"RELEASE_TOOL_CACHE"},
+		},
 	}
 	app.Action = func(context *cli.Context) error {
 		var (
@@ -134,6 +139,32 @@ This tool should be ran from the root of the project repository for a new releas
 		if context.Bool("debug") {
 			logrus.SetLevel(logrus.DebugLevel)
 		}
+
+		var (
+			cache   Cache
+			gitRoot string
+		)
+
+		if cd := context.String("cache"); cd == "" {
+			cache = nilCache{}
+		} else if cd, err := filepath.Abs(cd); err != nil {
+			return err
+		} else if _, err = os.Stat(cd); err != nil {
+			return errors.Wrap(err, "unable to use cache dir")
+		} else {
+			gitRoot = filepath.Join(cd, "git")
+			cacheRoot := filepath.Join(cd, "object")
+			if err := os.MkdirAll(gitRoot, 0755); err != nil {
+				return errors.Wrapf(err, "unable to mkdir %s", gitRoot)
+			}
+			if err := os.MkdirAll(cacheRoot, 0755); err != nil {
+				return errors.Wrapf(err, "unable to mkdir %s", cacheRoot)
+			}
+			cache = &dirCache{
+				root: cacheRoot,
+			}
+		}
+
 		r, err := loadRelease(releasePath)
 		if err != nil {
 			return err
@@ -180,7 +211,7 @@ This tool should be ran from the root of the project repository for a new releas
 		}
 		renameDependencies(previous, r.RenameDeps)
 
-		updatedDeps, err := updatedDeps(previous, current, r.IgnoreDeps)
+		updatedDeps, err := getUpdatedDeps(previous, current, r.IgnoreDeps, cache)
 		if err != nil {
 			return err
 		}
@@ -194,11 +225,14 @@ This tool should be ran from the root of the project repository for a new releas
 			if err != nil {
 				return errors.Wrap(err, "unable to compile 'match_deps' regexp")
 			}
-			td, err := ioutil.TempDir("", "tmp-clone-")
-			if err != nil {
-				return errors.Wrap(err, "unable to create temp clone directory")
+			if gitRoot == "" {
+				td, err := ioutil.TempDir("", "tmp-clone-")
+				if err != nil {
+					return errors.Wrap(err, "unable to create temp clone directory")
+				}
+				defer os.RemoveAll(td)
+				gitRoot = td
 			}
-			defer os.RemoveAll(td)
 
 			cwd, err := os.Getwd()
 			if err != nil {
@@ -216,13 +250,32 @@ This tool should be ran from the root of the project repository for a new releas
 				} else {
 					name = matches[1]
 				}
-				if err := os.Chdir(td); err != nil {
+				if err := os.Chdir(gitRoot); err != nil {
 					return errors.Wrap(err, "unable to chdir to temp clone directory")
 				}
-				git("clone", dep.GitURL, name)
+
+				var cloned bool
+				if _, err := os.Stat(name); err != nil && os.IsNotExist(err) {
+					logrus.Debugf("git clone %s %s", dep.GitURL, name)
+					if _, err := git("clone", dep.GitURL, name); err != nil {
+						return errors.Wrap(err, "failed to clone")
+					}
+					cloned = true
+				} else if err != nil {
+					return errors.Wrap(err, "unable to stat")
+				}
 
 				if err := os.Chdir(name); err != nil {
 					return errors.Wrapf(err, "unable to chdir to cloned %s directory", name)
+				}
+
+				if !cloned {
+					if _, err := git("show", dep.Ref); err != nil {
+						logrus.WithField("name", name).Debugf("git fetch origin")
+						if _, err := git("fetch", "origin"); err != nil {
+							return errors.Wrap(err, "failed to fetch")
+						}
+					}
 				}
 
 				changes, err := changelog(dep.Previous, dep.Ref)

@@ -448,10 +448,18 @@ func parseChangelog(changelog []byte) ([]change, error) {
 	return changes, nil
 }
 
-func getSha(gitURL, rev string) (string, error) {
-	logrus.Debugf("git ls-remote %s %s %s^{}", gitURL, rev, rev)
+func getSha(gitURL, rev string, cache Cache) (string, error) {
+	key := fmt.Sprintf("git ls-remote %s %s %s^{}", gitURL, rev, rev)
+	if b, ok := cache.Get(key); ok {
+		logrus.WithField("cache", "hit").Debug(key)
+		return string(b), nil
+	}
+	logrus.WithField("cache", "miss").Debug(key)
+
 	b, err := git("ls-remote", gitURL, rev, rev+"^{}")
 	if err != nil {
+		logrus.WithError(err).WithField("key", key).Debug("not using sha")
+		// Not found, don't use sha
 		return "", nil
 	}
 
@@ -482,6 +490,8 @@ func getSha(gitURL, rev string) (string, error) {
 	if sha == "" {
 		return "", errors.New("revision not found")
 	}
+
+	cache.Put(key, []byte(sha))
 	return sha, nil
 }
 
@@ -532,7 +542,7 @@ func renameDependencies(deps []dependency, renames map[string]projectRename) {
 	}
 }
 
-func updatedDeps(previous, deps []dependency, ignored []string) ([]dependency, error) {
+func getUpdatedDeps(previous, deps []dependency, ignored []string, cache Cache) ([]dependency, error) {
 	var updated []dependency
 	pm, cm := toDepMap(previous), toDepMap(deps)
 	ignoreMap := map[string]struct{}{}
@@ -554,7 +564,7 @@ func updatedDeps(previous, deps []dependency, ignored []string) ([]dependency, e
 		if d.Ref != c.Ref {
 			if d.Sha == "" {
 				if d.GitURL == "" {
-					gitURL, err := resolveGitURL(name)
+					gitURL, err := resolveGitURL(name, cache)
 					if err != nil {
 						return nil, errors.Wrapf(err, "git url for %q", name)
 					}
@@ -563,7 +573,7 @@ func updatedDeps(previous, deps []dependency, ignored []string) ([]dependency, e
 						c.GitURL = d.GitURL
 					}
 				}
-				sha, err := getSha(d.GitURL, d.Ref)
+				sha, err := getSha(d.GitURL, d.Ref, cache)
 				if err != nil {
 					return nil, errors.Wrapf(err, "failed to get sha for %q", name)
 				}
@@ -571,13 +581,13 @@ func updatedDeps(previous, deps []dependency, ignored []string) ([]dependency, e
 			}
 			if c.Sha == "" {
 				if c.GitURL == "" {
-					gitURL, err := resolveGitURL(name)
+					gitURL, err := resolveGitURL(name, cache)
 					if err != nil {
 						return nil, errors.Wrapf(err, "git url for %q", name)
 					}
 					c.GitURL = gitURL
 				}
-				sha, err := getSha(c.GitURL, c.Ref)
+				sha, err := getSha(c.GitURL, c.Ref, cache)
 				if err != nil {
 					return nil, errors.Wrapf(err, "failed to get sha for %q", name)
 				}
@@ -710,10 +720,18 @@ func githubPRLink(repo string) func(change) (string, error) {
 	}
 }
 
-func resolveGitURL(name string) (string, error) {
-	resp, err := http.Get("https://" + name + "?go-get=1")
+func resolveGitURL(name string, cache Cache) (string, error) {
+	u := "https://" + name + "?go-get=1"
+	if b, ok := cache.Get(u); ok {
+		return string(b), nil
+	}
+
+	resp, err := http.Get(u)
 	if err != nil {
 		return "", err
+	}
+	if resp.StatusCode >= 400 {
+		return "", errors.Errorf("unexpected status code %d for %s", resp.StatusCode, u)
 	}
 
 	t := html.NewTokenizer(resp.Body)
@@ -740,7 +758,9 @@ func resolveGitURL(name string) (string, error) {
 			if name == "go-import" {
 				parts := strings.Fields(content)
 				if len(parts) == 3 && parts[1] == "git" {
-					return parts[2], nil
+					resolved := parts[2]
+					cache.Put(u, []byte(resolved))
+					return resolved, nil
 				}
 			}
 		}
