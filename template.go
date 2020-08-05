@@ -45,9 +45,13 @@ https://github.com/{{.GithubRepo}}/issues.
 {{range $project := .Changes}}
 
 ### Changes{{if $project.Name}} from {{$project.Name}}{{end}}
+<details><summary>{{len $project.Changes}} commit{{if gt (len $project.Changes) 1}}s{{end}}</summary>
+<p>
 {{range $change := $project.Changes }}
 * {{$change.Commit}} {{$change.Description}}
 {{- end}}
+</p>
+</details>
 {{- end}}
 
 ### Dependency Changes
