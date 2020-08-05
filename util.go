@@ -33,7 +33,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v2"
 	"golang.org/x/net/html"
 )
 
@@ -659,7 +659,7 @@ func orderContributors(contributors map[contributor]int) []string {
 
 // getTemplate will use a builtin template if the template is not specified on the cli
 func getTemplate(context *cli.Context) (string, error) {
-	path := context.GlobalString("template")
+	path := context.String("template")
 	f, err := os.Open(path)
 	if err != nil {
 		// if the template file does not exist and the path is for the default template then

@@ -1,13 +1,22 @@
-# github.com/BurntSushi/toml v0.3.1-0.20170626110600-a368813c5e64
+# github.com/BurntSushi/toml v0.3.1
 github.com/BurntSushi/toml
-# github.com/pkg/errors v0.8.0
+# github.com/cpuguy83/go-md2man/v2 v2.0.0
+github.com/cpuguy83/go-md2man/v2/md2man
+# github.com/konsorten/go-windows-terminal-sequences v1.0.3
+github.com/konsorten/go-windows-terminal-sequences
+# github.com/pkg/errors v0.9.1
 github.com/pkg/errors
-# github.com/sirupsen/logrus v1.0.0
+# github.com/russross/blackfriday/v2 v2.0.1
+github.com/russross/blackfriday/v2
+# github.com/shurcooL/sanitized_anchor_name v1.0.0
+github.com/shurcooL/sanitized_anchor_name
+# github.com/sirupsen/logrus v1.6.0
 github.com/sirupsen/logrus
-# github.com/urfave/cli v1.20.1-0.20171014202726-7bc6a0acffa5
-github.com/urfave/cli
-# golang.org/x/net v0.0.0-20200324143707-d3edc9973b7e
+# github.com/urfave/cli/v2 v2.2.0
+github.com/urfave/cli/v2
+# golang.org/x/net v0.0.0-20200707034311-ab3426394381
 golang.org/x/net/html
 golang.org/x/net/html/atom
-# golang.org/x/sys v0.0.0-20200323222414-85ca7c5b95cd
+# golang.org/x/sys v0.0.0-20200803210538-64077c9b5642
+golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix

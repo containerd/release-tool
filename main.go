@@ -31,7 +31,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v2"
 )
 
 type note struct {
@@ -99,24 +99,24 @@ func main() {
 This tool should be ran from the root of the project repository for a new release.
 `
 	app.Flags = []cli.Flag{
-		cli.BoolFlag{
+		&cli.BoolFlag{
 			Name:  "dry,n",
 			Usage: "run the release tooling as a dry run to print the release notes to stdout",
 		},
-		cli.BoolFlag{
+		&cli.BoolFlag{
 			Name:  "debug,d",
 			Usage: "show debug output",
 		},
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name:  "tag,t",
 			Usage: "tag name for the release, defaults to release file name",
 		},
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name:  "template",
 			Usage: "template filepath to use in place of the default",
 			Value: defaultTemplateFile,
 		},
-		cli.BoolFlag{
+		&cli.BoolFlag{
 			Name:  "linkify,l",
 			Usage: "add links to changelog",
 		},
