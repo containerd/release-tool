@@ -1,6 +1,6 @@
 # release-tool
 
-[![Build Status](https://travis-ci.org/containerd/release-tool.svg?branch=master)](https://travis-ci.org/containerd/release-tool)
+[![Build Status](https://github.com/containerd/release-tool/workflows/CI/badge.svg)](https://github.com/containerd/release-tool/actions?query=workflow%3ACI)
 
 A release tool for generating detailed release notes
 
