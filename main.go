@@ -100,16 +100,19 @@ This tool should be ran from the root of the project repository for a new releas
 `
 	app.Flags = []cli.Flag{
 		&cli.BoolFlag{
-			Name:  "dry,n",
-			Usage: "run the release tooling as a dry run to print the release notes to stdout",
+			Name:    "dry",
+			Aliases: []string{"n"},
+			Usage:   "run the release tooling as a dry run to print the release notes to stdout",
 		},
 		&cli.BoolFlag{
-			Name:  "debug,d",
-			Usage: "show debug output",
+			Name:    "debug",
+			Aliases: []string{"d"},
+			Usage:   "show debug output",
 		},
 		&cli.StringFlag{
-			Name:  "tag,t",
-			Usage: "tag name for the release, defaults to release file name",
+			Name:    "tag",
+			Aliases: []string{"t"},
+			Usage:   "tag name for the release, defaults to release file name",
 		},
 		&cli.StringFlag{
 			Name:  "template",
@@ -117,8 +120,9 @@ This tool should be ran from the root of the project repository for a new releas
 			Value: defaultTemplateFile,
 		},
 		&cli.BoolFlag{
-			Name:  "linkify,l",
-			Usage: "add links to changelog",
+			Name:    "linkify",
+			Aliases: []string{"l"},
+			Usage:   "add links to changelog",
 		},
 		&cli.StringFlag{
 			Name:    "cache",
