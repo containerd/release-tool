@@ -94,6 +94,10 @@ func parseModulesTxtDependencies(r io.Reader) ([]dependency, error) {
 		var commitOrVersionPart string
 		if len(parts) == 3 {
 			commitOrVersionPart = parts[2]
+		} else if len(parts) == 5 && parts[2] == "=>" {
+			// replace directive in go.mod without old version
+			// no need to care since it will has corresponding one with old version
+			continue
 		} else if len(parts) == 6 && parts[3] == "=>" {
 			commitOrVersionPart = parts[5]
 		} else {
