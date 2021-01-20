@@ -93,9 +93,14 @@ func parseModulesTxtDependencies(r io.Reader) ([]dependency, error) {
 		}
 		var commitOrVersionPart string
 		if len(parts) == 3 {
+			// such as: # github.com/containerd/go-cni v1.0.1
 			commitOrVersionPart = parts[2]
 		} else if len(parts) == 6 && parts[3] == "=>" {
+			// such as:  # github.com/gogo/googleapis v1.4.0 => github.com/gogo/googleapis v1.3.2
 			commitOrVersionPart = parts[5]
+		} else if len(parts) == 5 && parts[2] == "=>" {
+			// such as: # github.com/gogo/googleapis => github.com/gogo/googleapis v1.3.2
+			commitOrVersionPart = parts[4]
 		} else {
 			return nil, errors.Wrapf(errUnknownFormat, "%s", ln)
 		}
