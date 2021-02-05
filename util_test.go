@@ -46,13 +46,13 @@ func TestGetGitURL(t *testing.T) {
 		name string
 		git  string
 	}{
-		{"github.com/docker/distribution", "git://github.com/docker/distribution"},
-		{"sigs.k8s.io/yaml", "git://github.com/kubernetes-sigs/yaml"},
-		{"k8s.io/utils", "git://github.com/kubernetes/utils"},
-		{"k8s.io/client-go", "git://github.com/kubernetes/client-go"},
-		//{"gopkg.in/src-d/go-git.v4", "git://github.com/src-d/go-git"},
-		//{"golang.org/x/tools", "git://github.com/golang/tools"},
-		//{"golang.org/x/sync", "git://github.com/golang/sync"},
+		{"github.com/docker/distribution", "https://github.com/docker/distribution"},
+		{"sigs.k8s.io/yaml", "https://github.com/kubernetes-sigs/yaml"},
+		{"k8s.io/utils", "https://github.com/kubernetes/utils"},
+		{"k8s.io/client-go", "https://github.com/kubernetes/client-go"},
+		//{"gopkg.in/src-d/go-git.v4", "https://github.com/src-d/go-git"},
+		//{"golang.org/x/tools", "https://github.com/golang/tools"},
+		//{"golang.org/x/sync", "https://github.com/golang/sync"},
 	} {
 		git := getGitURL(tc.name)
 		if git != tc.git {
