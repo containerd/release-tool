@@ -91,6 +91,9 @@ func parseModulesTxtDependencies(r io.Reader) ([]dependency, error) {
 		if parts[0] != "#" {
 			continue
 		}
+
+		// See https://golang.org/ref/mod#go-mod-file-replace for
+		// syntax on replace directives
 		var commitOrVersionPart string
 		if len(parts) == 3 {
 			commitOrVersionPart = parts[2]
@@ -100,6 +103,9 @@ func parseModulesTxtDependencies(r io.Reader) ([]dependency, error) {
 			continue
 		} else if len(parts) == 6 && parts[3] == "=>" {
 			commitOrVersionPart = parts[5]
+		} else if (len(parts) == 4 && parts[2] == "=>") || (len(parts) == 5 && parts[3] == "=>") {
+			// Ignore replace directive which uses filepath
+			continue
 		} else {
 			return nil, errors.Wrapf(errUnknownFormat, "%s", ln)
 		}
