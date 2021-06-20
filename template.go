@@ -39,7 +39,7 @@ https://github.com/{{.GithubRepo}}/issues.
 
 ### Contributors
 {{range $contributor := .Contributors}}
-* {{$contributor}}
+* {{$contributor.Name}}
 {{- end -}}
 
 {{range $project := .Changes}}

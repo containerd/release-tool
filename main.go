@@ -67,6 +67,16 @@ type projectRename struct {
 	New string `toml:"new"`
 }
 
+type contributor struct {
+	Name    string
+	Email   string
+	Commits int
+
+	// OtherNames are names seen in the change log associated with
+	// the same email
+	OtherNames []string
+}
+
 type release struct {
 	ProjectName     string            `toml:"project_name"`
 	GithubRepo      string            `toml:"github_repo"`
@@ -84,7 +94,7 @@ type release struct {
 
 	// generated fields
 	Changes      []projectChange
-	Contributors []string
+	Contributors []contributor
 	Dependencies []dependency
 	Tag          string
 	Version      string
@@ -182,7 +192,7 @@ This tool should be ran from the root of the project repository for a new releas
 		gitConfigs["mailmap.file"] = mailmapPath
 
 		var (
-			contributors   = map[contributor]int{}
+			contributors   = map[string]contributor{}
 			projectChanges = []projectChange{}
 		)
 
