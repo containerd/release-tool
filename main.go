@@ -59,7 +59,7 @@ type download struct {
 
 type projectChange struct {
 	Name    string
-	Changes []change
+	Changes []string
 }
 
 type projectRename struct {
@@ -190,9 +190,17 @@ This tool should be ran from the root of the project repository for a new releas
 		if err != nil {
 			return err
 		}
+		changeLines := make([]string, len(changes))
 		if linkify {
-			if err := linkifyChanges(changes, githubCommitLink(r.GithubRepo), githubPRLink(r.GithubRepo)); err != nil {
-				return err
+			for i := range changes {
+				changeLines[i], err = linkifyChange(&changes[i], githubCommitLink(r.GithubRepo), githubPRLink(r.GithubRepo, cache))
+				if err != nil {
+					return err
+				}
+			}
+		} else {
+			for i, change := range changes {
+				changeLines[i] = fmt.Sprintf("* %s %s", change.Commit, change.Description)
 			}
 		}
 		if err := addContributors(r.Previous, r.Commit, contributors); err != nil {
@@ -200,7 +208,7 @@ This tool should be ran from the root of the project repository for a new releas
 		}
 		projectChanges = append(projectChanges, projectChange{
 			Name:    "",
-			Changes: changes,
+			Changes: changeLines,
 		})
 
 		logrus.Infof("creating new release %s with %d new changes...", tag, len(changes))
@@ -289,20 +297,28 @@ This tool should be ran from the root of the project repository for a new releas
 				if err := addContributors(dep.Previous, dep.Ref, contributors); err != nil {
 					return errors.Wrapf(err, "failed to get authors for %s", name)
 				}
+				changeLines = make([]string, len(changes))
 				if linkify {
 					if !strings.HasPrefix(dep.Name, "github.com/") {
 						logrus.Debugf("linkify only supported for Github, skipping %s", dep.Name)
 					} else {
 						ghname := dep.Name[11:]
-						if err := linkifyChanges(changes, githubCommitLink(ghname), githubPRLink(ghname)); err != nil {
-							return err
+						for i := range changes {
+							changeLines[i], err = linkifyChange(&changes[i], githubCommitLink(ghname), githubPRLink(ghname, cache))
+							if err != nil {
+								return err
+							}
 						}
+					}
+				} else {
+					for i, change := range changes {
+						changeLines[i] = fmt.Sprintf("* %s %s", change.Commit, change.Description)
 					}
 				}
 
 				projectChanges = append(projectChanges, projectChange{
 					Name:    name,
-					Changes: changes,
+					Changes: changeLines,
 				})
 
 			}

@@ -19,6 +19,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -28,6 +29,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -417,27 +419,25 @@ func gitChangeDiff(previous, commit string) string {
 }
 
 func getChangelog(previous, commit string) ([]byte, error) {
-	return git("log", "--oneline", gitChangeDiff(previous, commit))
+	return git("log", "--oneline", "--topo-order", gitChangeDiff(previous, commit))
 }
 
-func linkifyChanges(c []change, commit, msg func(change) (string, error)) error {
-	for i := range c {
-		commitLink, err := commit(c[i])
-		if err != nil {
-			return err
-		}
-
-		description, err := msg(c[i])
-		if err != nil {
-			return err
-		}
-
-		c[i].Commit = fmt.Sprintf("[`%s`](%s)", c[i].Commit, commitLink)
-		c[i].Description = description
-
+func linkifyChange(c *change, commit func(*change) (string, error), pr func(*change) (int64, string, string, error)) (string, error) {
+	prn, title, link, err := pr(c)
+	if err != nil {
+		return "", err
 	}
 
-	return nil
+	if prn > 0 {
+		return fmt.Sprintf("* %s ([#%d](%s))", title, prn, link), nil
+	}
+
+	commitLink, err := commit(c)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("  * [`%s`](%s) %s", c.Commit, commitLink, c.Description), nil
 }
 
 func parseChangelog(changelog []byte) ([]change, error) {
@@ -697,8 +697,8 @@ func getTemplate(context *cli.Context) (string, error) {
 	return string(data), nil
 }
 
-func githubCommitLink(repo string) func(change) (string, error) {
-	return func(c change) (string, error) {
+func githubCommitLink(repo string) func(*change) (string, error) {
+	return func(c *change) (string, error) {
 		full, err := git("rev-parse", c.Commit)
 		if err != nil {
 			return "", err
@@ -709,24 +709,24 @@ func githubCommitLink(repo string) func(change) (string, error) {
 	}
 }
 
-func githubPRLink(repo string) func(change) (string, error) {
-	r := regexp.MustCompile("^Merge pull request #[0-9]+")
-	return func(c change) (string, error) {
-		var err error
-		message := r.ReplaceAllStringFunc(c.Description, func(m string) string {
-			idx := strings.Index(m, "#")
-			pr := m[idx+1:]
+func githubPRLink(repo string, cache Cache) func(*change) (int64, string, string, error) {
+	r := regexp.MustCompile(`^Merge pull request #([0-9]+) from \S+$`)
+	return func(c *change) (int64, string, string, error) {
+		if matches := r.FindSubmatch([]byte(c.Description)); len(matches) == 2 {
+			pr, err := strconv.ParseInt(string(matches[1]), 10, 64)
+			if err != nil {
+				return 0, "", "", err
+			}
+			title, err := getPRTitle(repo, pr, cache)
+			if err != nil {
+				return 0, "", "", err
+			}
 
-			// TODO: Validate links using github API
+			// TODO: Validate links using github API and get PR description
 			// TODO: Validate PR merged as commit hash
-			link := fmt.Sprintf("https://github.com/%s/pull/%s", repo, pr)
-
-			return fmt.Sprintf("%s [#%s](%s)", m[:idx], pr, link)
-		})
-		if err != nil {
-			return "", err
+			return pr, title, fmt.Sprintf("https://github.com/%s/pull/%d", repo, pr), nil
 		}
-		return message, nil
+		return 0, "", "", nil
 	}
 }
 
@@ -775,4 +775,47 @@ func resolveGitURL(name string, cache Cache) (string, error) {
 			}
 		}
 	}
+}
+
+func getPRTitle(repo string, prn int64, cache Cache) (string, error) {
+	u := fmt.Sprintf("https://api.github.com/repos/%s/pulls/%d", repo, prn)
+	key := u + " title"
+	if b, ok := cache.Get(key); ok {
+		return string(b), nil
+	}
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Add("Accept", "application/vnd.github.v3+json")
+	if user, token := os.Getenv("GITHUB_ACTOR"), os.Getenv("GITHUB_TOKEN"); user != "" && token != "" {
+		req.SetBasicAuth(user, token)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+
+	if resp.StatusCode >= 400 {
+		if resp.StatusCode >= 403 {
+			logrus.Warn("Forbidden response, try setting GITHUB_USER and GITHUB_TOKEN environment variables")
+		}
+		return "", errors.Errorf("unexpected status code %d for %s", resp.StatusCode, u)
+	}
+
+	dec := json.NewDecoder(resp.Body)
+
+	pr := struct {
+		Title string `json:"title"`
+	}{}
+	if err := dec.Decode(&pr); err != nil {
+		return "", err
+	}
+	if pr.Title == "" {
+		return "", errors.Errorf("unexpected empty title for %s", u)
+	}
+
+	cache.Put(key, []byte(pr.Title))
+	return pr.Title, nil
 }
