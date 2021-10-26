@@ -19,7 +19,6 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -29,7 +28,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -310,7 +308,7 @@ func parseVendorConfDependencies(r io.Reader) ([]dependency, error) {
 	return deps, nil
 }
 
-func changelog(previous, commit string) ([]change, error) {
+func changelog(previous, commit string) ([]*change, error) {
 	raw, err := getChangelog(previous, commit)
 	if err != nil {
 		return nil, err
@@ -329,32 +327,18 @@ func getChangelog(previous, commit string) ([]byte, error) {
 	return git("log", "--oneline", "--topo-order", gitChangeDiff(previous, commit))
 }
 
-func linkifyChange(c *change, commit func(*change) (string, error), pr func(*change) (int64, string, string, error)) (string, error) {
-	prn, title, link, err := pr(c)
-	if err != nil {
-		return "", err
-	}
-
-	if prn > 0 {
-		return fmt.Sprintf("* %s ([#%d](%s))", title, prn, link), nil
-	}
-
-	commitLink, err := commit(c)
-	if err != nil {
-		return "", err
-	}
-
-	return fmt.Sprintf("  * [`%s`](%s) %s", c.Commit, commitLink, c.Description), nil
+type changeProcessor interface {
+	process(*change) error
 }
 
-func parseChangelog(changelog []byte) ([]change, error) {
+func parseChangelog(changelog []byte) ([]*change, error) {
 	var (
-		changes []change
+		changes []*change
 		s       = bufio.NewScanner(bytes.NewReader(changelog))
 	)
 	for s.Scan() {
 		fields := strings.Fields(s.Text())
-		changes = append(changes, change{
+		changes = append(changes, &change{
 			Commit:      fields[0],
 			Description: strings.Join(fields[1:], " "),
 		})
@@ -624,39 +608,6 @@ func getTemplate(context *cli.Context) (string, error) {
 	return string(data), nil
 }
 
-func githubCommitLink(repo string) func(*change) (string, error) {
-	return func(c *change) (string, error) {
-		full, err := git("rev-parse", c.Commit)
-		if err != nil {
-			return "", err
-		}
-		commit := strings.TrimSpace(string(full))
-
-		return fmt.Sprintf("https://github.com/%s/commit/%s", repo, commit), nil
-	}
-}
-
-func githubPRLink(repo string, cache Cache) func(*change) (int64, string, string, error) {
-	r := regexp.MustCompile(`^Merge pull request #([0-9]+) from \S+$`)
-	return func(c *change) (int64, string, string, error) {
-		if matches := r.FindSubmatch([]byte(c.Description)); len(matches) == 2 {
-			pr, err := strconv.ParseInt(string(matches[1]), 10, 64)
-			if err != nil {
-				return 0, "", "", err
-			}
-			title, err := getPRTitle(repo, pr, cache)
-			if err != nil {
-				return 0, "", "", err
-			}
-
-			// TODO: Validate links using github API and get PR description
-			// TODO: Validate PR merged as commit hash
-			return pr, title, fmt.Sprintf("https://github.com/%s/pull/%d", repo, pr), nil
-		}
-		return 0, "", "", nil
-	}
-}
-
 func resolveGitURL(name string, cache Cache) (string, error) {
 	u := "https://" + name + "?go-get=1"
 	if b, ok := cache.Get(u); ok {
@@ -702,47 +653,4 @@ func resolveGitURL(name string, cache Cache) (string, error) {
 			}
 		}
 	}
-}
-
-func getPRTitle(repo string, prn int64, cache Cache) (string, error) {
-	u := fmt.Sprintf("https://api.github.com/repos/%s/pulls/%d", repo, prn)
-	key := u + " title"
-	if b, ok := cache.Get(key); ok {
-		return string(b), nil
-	}
-	req, err := http.NewRequest("GET", u, nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Add("Accept", "application/vnd.github.v3+json")
-	if user, token := os.Getenv("GITHUB_ACTOR"), os.Getenv("GITHUB_TOKEN"); user != "" && token != "" {
-		req.SetBasicAuth(user, token)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-
-	if resp.StatusCode >= 400 {
-		if resp.StatusCode >= 403 {
-			logrus.Warn("Forbidden response, try setting GITHUB_USER and GITHUB_TOKEN environment variables")
-		}
-		return "", errors.Errorf("unexpected status code %d for %s", resp.StatusCode, u)
-	}
-
-	dec := json.NewDecoder(resp.Body)
-
-	pr := struct {
-		Title string `json:"title"`
-	}{}
-	if err := dec.Decode(&pr); err != nil {
-		return "", err
-	}
-	if pr.Title == "" {
-		return "", errors.Errorf("unexpected empty title for %s", u)
-	}
-
-	cache.Put(key, []byte(pr.Title))
-	return pr.Title, nil
 }

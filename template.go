@@ -48,7 +48,7 @@ https://github.com/{{.GithubRepo}}/issues.
 <details><summary>{{len $project.Changes}} commit{{if gt (len $project.Changes) 1}}s{{end}}</summary>
 <p>
 {{range $change := $project.Changes }}
-{{$change}}
+{{if not $change.IsMerge}}  {{end}}* {{$change.Formatted}}
 {{- end}}
 </p>
 </details>
