@@ -530,12 +530,7 @@ func toDepMap(deps []dependency) map[string]dependency {
 	return out
 }
 
-type contributor struct {
-	name  string
-	email string
-}
-
-func addContributors(previous, commit string, contributors map[contributor]int) error {
+func addContributors(previous, commit string, contributors map[string]contributor) error {
 	raw, err := git("log", `--format=%aE %aN`, gitChangeDiff(previous, commit))
 	if err != nil {
 		return err
@@ -544,44 +539,69 @@ func addContributors(previous, commit string, contributors map[contributor]int) 
 	for s.Scan() {
 		p := strings.SplitN(s.Text(), " ", 2)
 		if len(p) != 2 {
-			return errors.Errorf("invalid author line: %q", s.Text())
+			return fmt.Errorf("unparsable git log output: %s", s.Text())
 		}
-		c := contributor{
-			name:  p[1],
-			email: p[0],
-		}
-		contributors[c] = contributors[c] + 1
+		addContributor(contributors, p[1], p[0])
 	}
 	return s.Err()
 }
 
-func orderContributors(contributors map[contributor]int) []string {
-	type contribstat struct {
-		name  string
-		email string
-		count int
+func addContributor(contributors map[string]contributor, name, email string) {
+	c, ok := contributors[email]
+	if ok {
+		c.Commits = c.Commits + 1
+		if c.Name != name {
+			var found bool
+			for _, on := range c.OtherNames {
+				if on == name {
+					found = true
+					break
+				}
+			}
+			if !found {
+				c.OtherNames = append(c.OtherNames, name)
+			}
+		}
+	} else {
+		c = contributor{
+			Name:    name,
+			Email:   email,
+			Commits: 1,
+		}
 	}
-	all := make([]contribstat, 0, len(contributors))
-	for c, count := range contributors {
-		all = append(all, contribstat{
-			name:  c.name,
-			email: c.email,
-			count: count,
-		})
+	contributors[email] = c
+}
+
+func orderContributors(contributors map[string]contributor) []contributor {
+	all := make([]contributor, 0, len(contributors))
+	for _, c := range contributors {
+		all = append(all, c)
 	}
 	sort.Slice(all, func(i, j int) bool {
-		if all[i].count == all[j].count {
-			return all[i].name < all[j].name
+		if all[i].Commits == all[j].Commits {
+			return all[i].Name < all[j].Name
 		}
-		return all[i].count > all[j].count
+		return all[i].Commits > all[j].Commits
 	})
-	names := make([]string, len(all))
-	for i := range names {
-		logrus.Debugf("Contributor: %s <%s> with %d commits", all[i].name, all[i].email, all[i].count)
-		names[i] = all[i].name
+
+	nameEmail := map[string]string{}
+	suggestions := []string{}
+	for i := range all {
+		logrus.Debugf("Contributor: %s <%s> with %d commits", all[i].Name, all[i].Email, all[i].Commits)
+		for _, otherName := range all[i].OtherNames {
+			suggestions = append(suggestions, fmt.Sprintf("\"%s <%s>\" also has name %q", all[i].Name, all[i].Email, otherName))
+		}
+		if email, ok := nameEmail[all[i].Name]; ok {
+			suggestions = append(suggestions, fmt.Sprintf("\"%s <%s> <%s>\" has multiple emails", all[i].Name, email, all[i].Email))
+		} else {
+			nameEmail[all[i].Name] = all[i].Email
+		}
+	}
+	for _, suggestion := range suggestions {
+		logrus.Info("Mailmap suggestion: " + suggestion)
 	}
 
-	return names
+	return all
 }
 
 // getTemplate will use a builtin template if the template is not specified on the cli
