@@ -148,6 +148,11 @@ This tool should be ran from the root of the project repository for a new releas
 			Aliases: []string{"l"},
 			Usage:   "add links to changelog",
 		},
+		&cli.BoolFlag{
+			Name:    "short",
+			Aliases: []string{"s"},
+			Usage:   "shorten changelog length where possible",
+		},
 		&cli.StringFlag{
 			Name:    "cache",
 			Usage:   "cache directory for static remote resources",
@@ -159,6 +164,7 @@ This tool should be ran from the root of the project repository for a new releas
 			releasePath = context.Args().First()
 			tag         = context.String("tag")
 			linkify     = context.Bool("linkify")
+			short       = context.Bool("short")
 		)
 		if tag == "" {
 			tag = parseTag(releasePath)
@@ -218,6 +224,9 @@ This tool should be ran from the root of the project repository for a new releas
 			for _, change := range changes {
 				if err := githubChange(r.GithubRepo, cache).process(change); err != nil {
 					return err
+				}
+				if short && !change.IsMerge {
+					change.Formatted = change.Title
 				}
 			}
 		} else {
@@ -327,6 +336,9 @@ This tool should be ran from the root of the project repository for a new releas
 						for _, change := range changes {
 							if err := githubChange(ghname, cache).process(change); err != nil {
 								return err
+							}
+							if short && !change.IsMerge {
+								change.Formatted = change.Title
 							}
 						}
 					}

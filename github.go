@@ -76,6 +76,7 @@ func (p *githubChangeProcessor) process(c *change) error {
 		}
 		commit := strings.TrimSpace(string(full))
 
+		c.Title = c.Description
 		c.Link = fmt.Sprintf("https://github.com/%s/commit/%s", p.repo, commit)
 		c.Formatted = fmt.Sprintf("[`%s`](%s) %s", c.Commit, c.Link, c.Description)
 	}
