@@ -42,6 +42,16 @@ type note struct {
 type change struct {
 	Commit      string `toml:"commit"`
 	Description string `toml:"description"`
+
+	Title    string
+	Category string
+	Link     string
+
+	IsMerge bool
+	//IsBreaking  bool
+	//IsHighlight bool
+
+	Formatted string
 }
 
 type dependency struct {
@@ -59,7 +69,7 @@ type download struct {
 
 type projectChange struct {
 	Name    string
-	Changes []string
+	Changes []*change
 }
 
 type projectRename struct {
@@ -78,14 +88,18 @@ type contributor struct {
 }
 
 type release struct {
-	ProjectName     string            `toml:"project_name"`
-	GithubRepo      string            `toml:"github_repo"`
-	Commit          string            `toml:"commit"`
-	Previous        string            `toml:"previous"`
-	PreRelease      bool              `toml:"pre_release"`
-	Preface         string            `toml:"preface"`
-	Notes           map[string]note   `toml:"notes"`
-	BreakingChanges map[string]change `toml:"breaking"`
+	ProjectName     string             `toml:"project_name"`
+	GithubRepo      string             `toml:"github_repo"`
+	Commit          string             `toml:"commit"`
+	Previous        string             `toml:"previous"`
+	PreRelease      bool               `toml:"pre_release"`
+	Preface         string             `toml:"preface"`
+	Notes           map[string]note    `toml:"notes"`
+	BreakingChanges map[string]*change `toml:"breaking"`
+
+	// highlight options
+	//HighlightLabel string   `toml:"highlight_label"`
+	//CategoryLabels []string `toml:"category_labels"`
 
 	// dependency options
 	MatchDeps  string                   `toml:"match_deps"`
@@ -134,6 +148,11 @@ This tool should be ran from the root of the project repository for a new releas
 			Aliases: []string{"l"},
 			Usage:   "add links to changelog",
 		},
+		&cli.BoolFlag{
+			Name:    "short",
+			Aliases: []string{"s"},
+			Usage:   "shorten changelog length where possible",
+		},
 		&cli.StringFlag{
 			Name:    "cache",
 			Usage:   "cache directory for static remote resources",
@@ -145,6 +164,7 @@ This tool should be ran from the root of the project repository for a new releas
 			releasePath = context.Args().First()
 			tag         = context.String("tag")
 			linkify     = context.Bool("linkify")
+			short       = context.Bool("short")
 		)
 		if tag == "" {
 			tag = parseTag(releasePath)
@@ -200,17 +220,18 @@ This tool should be ran from the root of the project repository for a new releas
 		if err != nil {
 			return err
 		}
-		changeLines := make([]string, len(changes))
 		if linkify {
-			for i := range changes {
-				changeLines[i], err = linkifyChange(&changes[i], githubCommitLink(r.GithubRepo), githubPRLink(r.GithubRepo, cache))
-				if err != nil {
+			for _, change := range changes {
+				if err := githubChange(r.GithubRepo, cache).process(change); err != nil {
 					return err
+				}
+				if short && !change.IsMerge {
+					change.Formatted = change.Title
 				}
 			}
 		} else {
-			for i, change := range changes {
-				changeLines[i] = fmt.Sprintf("* %s %s", change.Commit, change.Description)
+			for _, change := range changes {
+				change.Formatted = fmt.Sprintf("* %s %s", change.Commit, change.Description)
 			}
 		}
 		if err := addContributors(r.Previous, r.Commit, contributors); err != nil {
@@ -218,7 +239,7 @@ This tool should be ran from the root of the project repository for a new releas
 		}
 		projectChanges = append(projectChanges, projectChange{
 			Name:    "",
-			Changes: changeLines,
+			Changes: changes,
 		})
 
 		logrus.Infof("creating new release %s with %d new changes...", tag, len(changes))
@@ -307,28 +328,29 @@ This tool should be ran from the root of the project repository for a new releas
 				if err := addContributors(dep.Previous, dep.Ref, contributors); err != nil {
 					return errors.Wrapf(err, "failed to get authors for %s", name)
 				}
-				changeLines = make([]string, len(changes))
 				if linkify {
 					if !strings.HasPrefix(dep.Name, "github.com/") {
 						logrus.Debugf("linkify only supported for Github, skipping %s", dep.Name)
 					} else {
 						ghname := dep.Name[11:]
-						for i := range changes {
-							changeLines[i], err = linkifyChange(&changes[i], githubCommitLink(ghname), githubPRLink(ghname, cache))
-							if err != nil {
+						for _, change := range changes {
+							if err := githubChange(ghname, cache).process(change); err != nil {
 								return err
+							}
+							if short && !change.IsMerge {
+								change.Formatted = change.Title
 							}
 						}
 					}
 				} else {
-					for i, change := range changes {
-						changeLines[i] = fmt.Sprintf("* %s %s", change.Commit, change.Description)
+					for _, change := range changes {
+						change.Formatted = fmt.Sprintf("* %s %s", change.Commit, change.Description)
 					}
 				}
 
 				projectChanges = append(projectChanges, projectChange{
 					Name:    name,
-					Changes: changeLines,
+					Changes: changes,
 				})
 
 			}
