@@ -48,8 +48,13 @@ func TestGetGitURL(t *testing.T) {
 	}{
 		{"github.com/docker/distribution", "https://github.com/docker/distribution"},
 		{"sigs.k8s.io/yaml", "https://github.com/kubernetes-sigs/yaml"},
+		{"sigs.k8s.io/yaml/v2", "https://github.com/kubernetes-sigs/yaml"},
 		{"k8s.io/utils", "https://github.com/kubernetes/utils"},
+		{"k8s.io/utils/v8", "https://github.com/kubernetes/utils"},
 		{"k8s.io/client-go", "https://github.com/kubernetes/client-go"},
+		{"github.com/someorg/somerepo/v2", "https://github.com/someorg/somerepo"},
+		{"github.com/someorg/somerepo/unnecessarysubmod", "https://github.com/someorg/somerepo"},
+		{"github.com/invalid", ""},
 		//{"gopkg.in/src-d/go-git.v4", "https://github.com/src-d/go-git"},
 		//{"golang.org/x/tools", "https://github.com/golang/tools"},
 		//{"golang.org/x/sync", "https://github.com/golang/sync"},

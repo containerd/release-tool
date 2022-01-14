@@ -248,11 +248,23 @@ func getGitURL(name string) string {
 	if idx := strings.Index(name, "/"); idx > 0 {
 		switch name[:idx] {
 		case "github.com":
-			return "https://" + name
+			parts := strings.Split(name, "/")
+			if parts < 3 {
+				return ""
+			}
+			return "https://" + strings.Join(name[0:3], "/")
 		case "k8s.io":
-			return "https://github.com/kubernetes" + name[idx:]
+			repo := name[idx+1:]
+			if i := strings.Index(repo, "/"); i > 0 {
+				repo = repo[:i]
+			}
+			return "https://github.com/kubernetes/" + repo
 		case "sigs.k8s.io":
-			return "https://github.com/kubernetes-sigs" + name[idx:]
+			repo := name[idx+1:]
+			if i := strings.Index(repo, "/"); i > 0 {
+				repo = repo[:i]
+			}
+			return "https://github.com/kubernetes-sigs/" + repo
 		case "gopkg.in":
 			// gopkg.in/pkg.v3      → github.com/go-pkg/pkg (branch/tag v3, v3.N, or v3.N.M)
 			// gopkg.in/user/pkg.v3 → github.com/user/pkg   (branch/tag v3, v3.N, or v3.N.M)
