@@ -73,6 +73,11 @@ jobs:
       run: GOGC=75 golangci-lint run
       working-directory: src/github.com/containerd/release-tool
 
+    - name: Unit Test
+      working-directory: src/github.com/containerd/release-tool
+      run: |
+        go test -v .
+
     - name: Build
       working-directory: src/github.com/containerd/release-tool
       run: |
