@@ -6,11 +6,13 @@ linters:
     - unconvert
     - gofmt
     - goimports
-    - golint
+    - revive
     - ineffassign
     - vet
     - unused
     - misspell
+    - exportloopref
+    - tenv
   disable:
     - errcheck
 
