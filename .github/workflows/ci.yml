@@ -10,14 +10,14 @@ jobs:
 
   build:
     name: Release-Tool CI
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 5
     steps:
 
-    - name: Set up Go 1.13
+    - name: Set up Go
       uses: actions/setup-go@v1
       with:
-        go-version: 1.13
+        go-version: 1.19
       id: go
 
     - name: Setup Go binary path
@@ -41,11 +41,9 @@ jobs:
     - name: Install dependencies
       env:
         GO111MODULE: off
-        GOLANGCI_LINT_VERSION: "v1.22.2"
       run: |
         go get -u github.com/vbatts/git-validation
         go get -u github.com/kunalkushwaha/ltag
-        curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sh -s -- -b $(go env GOPATH)/bin ${GOLANGCI_LINT_VERSION}
 
     - name: Check DCO/whitespace/commit message
       env:
@@ -69,9 +67,11 @@ jobs:
       run: ../project/script/validate/vendor
       working-directory: src/github.com/containerd/release-tool
 
-    - name: Lint
-      run: GOGC=75 golangci-lint run
-      working-directory: src/github.com/containerd/release-tool
+    - name: Linter
+      uses: golangci/golangci-lint-action@v3
+      with:
+        version: v1.48.0
+        working-directory: src/github.com/containerd/release-tool
 
     - name: Unit Test
       working-directory: src/github.com/containerd/release-tool
