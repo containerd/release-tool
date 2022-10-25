@@ -29,7 +29,6 @@ import (
 	"text/template"
 	"unicode"
 
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 )
@@ -184,15 +183,15 @@ This tool should be ran from the root of the project repository for a new releas
 		} else if cd, err := filepath.Abs(cd); err != nil {
 			return err
 		} else if _, err = os.Stat(cd); err != nil {
-			return errors.Wrap(err, "unable to use cache dir")
+			return fmt.Errorf("unable to use cache dir: %w", err)
 		} else {
 			gitRoot = filepath.Join(cd, "git")
 			cacheRoot := filepath.Join(cd, "object")
 			if err := os.MkdirAll(gitRoot, 0755); err != nil {
-				return errors.Wrapf(err, "unable to mkdir %s", gitRoot)
+				return fmt.Errorf("unable to mkdir %s: %w", gitRoot, err)
 			}
 			if err := os.MkdirAll(cacheRoot, 0755); err != nil {
-				return errors.Wrapf(err, "unable to mkdir %s", cacheRoot)
+				return fmt.Errorf("unable to mkdir: %s: %w", cacheRoot, err)
 			}
 			cache = &dirCache{
 				root: cacheRoot,
@@ -207,7 +206,7 @@ This tool should be ran from the root of the project repository for a new releas
 
 		mailmapPath, err := filepath.Abs(".mailmap")
 		if err != nil {
-			return errors.Wrap(err, "failed to resolve mailmap")
+			return fmt.Errorf("failed to resolve mailmap: %w", err)
 		}
 		gitConfigs["mailmap.file"] = mailmapPath
 
@@ -266,12 +265,12 @@ This tool should be ran from the root of the project repository for a new releas
 		if r.MatchDeps != "" && len(updatedDeps) > 0 {
 			re, err := regexp.Compile(r.MatchDeps)
 			if err != nil {
-				return errors.Wrap(err, "unable to compile 'match_deps' regexp")
+				return fmt.Errorf("unable to compile 'match_deps' regexp: %w", err)
 			}
 			if gitRoot == "" {
 				td, err := ioutil.TempDir("", "tmp-clone-")
 				if err != nil {
-					return errors.Wrap(err, "unable to create temp clone directory")
+					return fmt.Errorf("unable to create temp clone directory: %w", err)
 				}
 				defer os.RemoveAll(td)
 				gitRoot = td
@@ -279,7 +278,7 @@ This tool should be ran from the root of the project repository for a new releas
 
 			cwd, err := os.Getwd()
 			if err != nil {
-				return errors.Wrap(err, "unable to get cwd")
+				return fmt.Errorf("unable to get cwd: %w", err)
 			}
 			for _, dep := range updatedDeps {
 				matches := re.FindStringSubmatch(dep.Name)
@@ -294,39 +293,39 @@ This tool should be ran from the root of the project repository for a new releas
 					name = matches[1]
 				}
 				if err := os.Chdir(gitRoot); err != nil {
-					return errors.Wrap(err, "unable to chdir to temp clone directory")
+					return fmt.Errorf("unable to chdir to temp clone directory: %w", err)
 				}
 
 				var cloned bool
 				if _, err := os.Stat(name); err != nil && os.IsNotExist(err) {
 					logrus.Debugf("git clone %s %s", dep.GitURL, name)
 					if _, err := git("clone", dep.GitURL, name); err != nil {
-						return errors.Wrap(err, "failed to clone")
+						return fmt.Errorf("failed to clone: %w", err)
 					}
 					cloned = true
 				} else if err != nil {
-					return errors.Wrap(err, "unable to stat")
+					return fmt.Errorf("unable to stat: %w", err)
 				}
 
 				if err := os.Chdir(name); err != nil {
-					return errors.Wrapf(err, "unable to chdir to cloned %s directory", name)
+					return fmt.Errorf("unable to chdir to cloned %s directory: %w", name, err)
 				}
 
 				if !cloned {
 					if _, err := git("show", dep.Ref); err != nil {
 						logrus.WithField("name", name).Debugf("git fetch origin")
 						if _, err := git("fetch", "origin"); err != nil {
-							return errors.Wrap(err, "failed to fetch")
+							return fmt.Errorf("failed to fetch: %w", err)
 						}
 					}
 				}
 
 				changes, err := changelog(dep.Previous, dep.Ref)
 				if err != nil {
-					return errors.Wrapf(err, "failed to get changelog for %s", name)
+					return fmt.Errorf("failed to get changelog for %s: %w", name, err)
 				}
 				if err := addContributors(dep.Previous, dep.Ref, contributors); err != nil {
-					return errors.Wrapf(err, "failed to get authors for %s", name)
+					return fmt.Errorf("failed to get authors for %s: %w", name, err)
 				}
 				if linkify {
 					if !strings.HasPrefix(dep.Name, "github.com/") {
@@ -355,7 +354,7 @@ This tool should be ran from the root of the project repository for a new releas
 
 			}
 			if err := os.Chdir(cwd); err != nil {
-				return errors.Wrap(err, "unable to chdir to previous cwd")
+				return fmt.Errorf("unable to chdir to previous cwd: %w", err)
 			}
 		}
 
