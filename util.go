@@ -21,7 +21,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"os/exec"
@@ -122,7 +121,7 @@ func parseModulesTxtDependencies(r io.Reader) ([]dependency, error) {
 func parseGoModDependencies(r io.Reader) ([]dependency, error) {
 	var err error
 
-	contents, err := ioutil.ReadAll(r)
+	contents, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
@@ -643,7 +642,7 @@ func getTemplate(context *cli.Context) (string, error) {
 		return "", err
 	}
 	defer f.Close()
-	data, err := ioutil.ReadAll(f)
+	data, err := io.ReadAll(f)
 	if err != nil {
 		return "", err
 	}

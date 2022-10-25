@@ -18,7 +18,6 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -269,7 +268,7 @@ This tool should be ran from the root of the project repository for a new releas
 				return errors.Wrap(err, "unable to compile 'match_deps' regexp")
 			}
 			if gitRoot == "" {
-				td, err := ioutil.TempDir("", "tmp-clone-")
+				td, err := os.MkdirTemp("", "tmp-clone-")
 				if err != nil {
 					return errors.Wrap(err, "unable to create temp clone directory")
 				}
