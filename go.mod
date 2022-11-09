@@ -1,14 +1,19 @@
 module github.com/containerd/release-tool
 
-go 1.13
+go 1.19
 
 require (
-	github.com/BurntSushi/toml v0.3.1
-	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
-	github.com/sirupsen/logrus v1.6.0
-	github.com/stretchr/testify v1.4.0 // indirect
-	github.com/urfave/cli/v2 v2.2.0
-	golang.org/x/mod v0.4.2
-	golang.org/x/net v0.0.0-20200707034311-ab3426394381
-	golang.org/x/sys v0.0.0-20200803210538-64077c9b5642 // indirect
+	github.com/BurntSushi/toml v1.2.1
+	github.com/sirupsen/logrus v1.9.0
+	github.com/urfave/cli/v2 v2.20.3
+	golang.org/x/mod v0.6.0
+	golang.org/x/net v0.1.0
+)
+
+require (
+	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
+	github.com/russross/blackfriday/v2 v2.1.0 // indirect
+	github.com/stretchr/testify v1.8.1 // indirect
+	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
+	golang.org/x/sys v0.1.0 // indirect
 )
