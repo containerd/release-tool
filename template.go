@@ -67,5 +67,6 @@ This release has no dependency changes
 
 Previous release can be found at [{{.Previous}}](https://github.com/{{.GithubRepo}}/releases/tag/{{.Previous}})
 {{- end}}
+{{.Postface}}
 `
 )

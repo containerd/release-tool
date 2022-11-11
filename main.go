@@ -92,6 +92,7 @@ type release struct {
 	Previous        string             `toml:"previous"`
 	PreRelease      bool               `toml:"pre_release"`
 	Preface         string             `toml:"preface"`
+	Postface        string             `toml:"postface"`
 	Notes           map[string]note    `toml:"notes"`
 	BreakingChanges map[string]*change `toml:"breaking"`
 
@@ -366,6 +367,7 @@ This tool should be ran from the root of the project repository for a new releas
 
 		// Remove trailing new lines
 		r.Preface = strings.TrimRightFunc(r.Preface, unicode.IsSpace)
+		r.Postface = strings.TrimRightFunc(r.Postface, unicode.IsSpace)
 
 		tmpl, err := getTemplate(context)
 		if err != nil {
