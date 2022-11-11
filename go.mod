@@ -3,7 +3,7 @@ module github.com/containerd/release-tool
 go 1.19
 
 require (
-	github.com/BurntSushi/toml v1.2.1
+	github.com/pelletier/go-toml/v2 v2.0.5
 	github.com/sirupsen/logrus v1.9.0
 	github.com/urfave/cli/v2 v2.20.3
 	golang.org/x/mod v0.6.0

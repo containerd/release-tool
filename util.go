@@ -30,7 +30,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/BurntSushi/toml"
+	"github.com/pelletier/go-toml/v2"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/mod/modfile"
@@ -49,10 +49,14 @@ var (
 
 func loadRelease(path string) (*release, error) {
 	var r release
-	if _, err := toml.DecodeFile(path, &r); err != nil {
+	b, err := os.ReadFile(path)
+	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, errors.New("please specify the release file as the first argument")
 		}
+		return nil, err
+	}
+	if err = toml.Unmarshal(b, &r); err != nil {
 		return nil, err
 	}
 	return &r, nil
