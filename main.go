@@ -152,6 +152,10 @@ This tool should be ran from the root of the project repository for a new releas
 			Aliases: []string{"s"},
 			Usage:   "shorten changelog length where possible",
 		},
+		&cli.BoolFlag{
+			Name:  "skip-commits",
+			Usage: "skips commit links and titles",
+		},
 		&cli.StringFlag{
 			Name:    "cache",
 			Usage:   "cache directory for static remote resources",
@@ -164,6 +168,7 @@ This tool should be ran from the root of the project repository for a new releas
 			tag         = context.String("tag")
 			linkify     = context.Bool("linkify")
 			short       = context.Bool("short")
+			skipCommits = context.Bool("skip-commits")
 		)
 		if tag == "" {
 			tag = parseTag(releasePath)
@@ -224,8 +229,12 @@ This tool should be ran from the root of the project repository for a new releas
 				if err := githubChange(r.GithubRepo, cache).process(change); err != nil {
 					return err
 				}
-				if short && !change.IsMerge {
-					change.Formatted = change.Title
+				if !change.IsMerge {
+					if skipCommits {
+						change.Formatted = ""
+					} else if short {
+						change.Formatted = change.Title
+					}
 				}
 			}
 		} else {
@@ -336,8 +345,12 @@ This tool should be ran from the root of the project repository for a new releas
 							if err := githubChange(ghname, cache).process(change); err != nil {
 								return err
 							}
-							if short && !change.IsMerge {
-								change.Formatted = change.Title
+							if !change.IsMerge {
+								if skipCommits {
+									change.Formatted = ""
+								} else if short {
+									change.Formatted = change.Title
+								}
 							}
 						}
 					}
