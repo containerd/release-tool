@@ -58,6 +58,7 @@ type dependency struct {
 	Sha      string
 	Previous string
 	GitURL   string
+	New      bool
 }
 
 type download struct {
@@ -73,6 +74,10 @@ type projectChange struct {
 type projectRename struct {
 	Old string `toml:"old"`
 	New string `toml:"new"`
+}
+
+type dependencyOverride struct {
+	Previous string `toml:"previous"`
 }
 
 type contributor struct {
@@ -101,9 +106,10 @@ type release struct {
 	//CategoryLabels []string `toml:"category_labels"`
 
 	// dependency options
-	MatchDeps  string                   `toml:"match_deps"`
-	RenameDeps map[string]projectRename `toml:"rename_deps"`
-	IgnoreDeps []string                 `toml:"ignore_deps"`
+	MatchDeps    string                        `toml:"match_deps"`
+	RenameDeps   map[string]projectRename      `toml:"rename_deps"`
+	IgnoreDeps   []string                      `toml:"ignore_deps"`
+	OverrideDeps map[string]dependencyOverride `toml:"override_deps"`
 
 	// generated fields
 	Changes      []projectChange
@@ -255,6 +261,7 @@ This tool should be ran from the root of the project repository for a new releas
 		if err != nil {
 			return err
 		}
+		overrideDependencies(current, r.OverrideDeps)
 
 		previous, err := parseDependencies(r.Previous)
 		if err != nil {
