@@ -105,10 +105,17 @@ type release struct {
 	//HighlightLabel string   `toml:"highlight_label"`
 	//CategoryLabels []string `toml:"category_labels"`
 
-	// dependency options
-	MatchDeps    string                        `toml:"match_deps"`
-	RenameDeps   map[string]projectRename      `toml:"rename_deps"`
-	IgnoreDeps   []string                      `toml:"ignore_deps"`
+	// MatchDeps provides a regex string to match dependencies to be
+	// included as part of the changelog.
+	MatchDeps string `toml:"match_deps"`
+	// RenameDeps provides a way to match dependencies which have been
+	// renamed from the old name to the new name.
+	RenameDeps map[string]projectRename `toml:"rename_deps"`
+	// IgnoreDeps are dependencies to ignore from the output.
+	IgnoreDeps []string `toml:"ignore_deps"`
+	// OverrideDeps is used to override the current dependency calculated
+	// from the dependency list. This can be used to set the previous version
+	// which could be missing for new or moved dependencies.
 	OverrideDeps map[string]dependencyOverride `toml:"override_deps"`
 
 	// generated fields
