@@ -465,6 +465,20 @@ func git(args ...string) ([]byte, error) {
 	return o, nil
 }
 
+func overrideDependencies(deps []dependency, overrides map[string]dependencyOverride) {
+	if len(overrides) == 0 {
+		return
+	}
+	for i := range deps {
+		if or, ok := overrides[deps[i].Name]; ok {
+			if or.Previous != "" {
+				logrus.Debugf("Overrode previous version of %s to %s", deps[i].Name, or.Previous)
+				deps[i].Previous = or.Previous
+			}
+		}
+	}
+}
+
 func renameDependencies(deps []dependency, renames map[string]projectRename) {
 	if len(renames) == 0 {
 		return
@@ -503,11 +517,18 @@ func getUpdatedDeps(previous, deps []dependency, ignored []string, cache Cache) 
 		d, ok := pm[name]
 		if !ok {
 			// it is a new dep and should be noted
+			c.New = true
 			updated = append(updated, c)
 			continue
 		}
 		// it exists, see if its updated
-		if d.Ref != c.Ref {
+		if c.Previous != "" {
+			// Handle previous override
+			if c.Previous != c.Ref {
+				logrus.Debugf("Override dependency: %q %s -> %s", c.Name, c.Previous, c.Ref)
+				updated = append(updated, c)
+			}
+		} else if d.Ref != c.Ref {
 			if d.Sha == "" {
 				if d.GitURL == "" {
 					gitURL, err := resolveGitURL(name, cache)

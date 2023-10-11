@@ -59,7 +59,7 @@ https://github.com/{{.GithubRepo}}/issues.
 ### Dependency Changes
 {{if .Dependencies}}
 {{- range $dep := .Dependencies}}
-* **{{$dep.Name}}**	{{if $dep.Previous}}{{$dep.Previous}} -> {{$dep.Ref}}{{else}}{{$dep.Ref}} **_new_**{{end}}
+* **{{$dep.Name}}**	{{if $dep.New}}{{$dep.Ref}} **_new_**{{else}}{{$dep.Previous}} -> {{$dep.Ref}}{{end}}
 {{- end}}
 {{- else}}
 This release has no dependency changes
