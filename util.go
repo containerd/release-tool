@@ -654,6 +654,69 @@ func orderContributors(contributors map[string]contributor) []contributor {
 	return all
 }
 
+func groupHighlights(changes []projectChange) []highlightCategory {
+	security := []highlightChange{}
+	deprecation := []highlightChange{}
+	breaking := []highlightChange{}
+	categories := map[string][]highlightChange{}
+	categoryList := []string{}
+	for _, project := range changes {
+		for _, c := range project.Changes {
+			if c.IsSecurity {
+				security = append(security, getHighlightChange(project.Name, c))
+			} else if c.IsHighlight {
+				cc, ok := categories[c.Category]
+				if !ok {
+					categoryList = append(categoryList, c.Category)
+				}
+				categories[c.Category] = append(cc, getHighlightChange(project.Name, c))
+			}
+
+			// Allow deprecation and breaking changes to show up twice
+			if c.IsDeprecation {
+				deprecation = append(deprecation, getHighlightChange(project.Name, c))
+			} else if c.IsBreaking {
+				breaking = append(breaking, getHighlightChange(project.Name, c))
+			}
+		}
+	}
+	highlights := make([]highlightCategory, 0, len(categories)+3)
+	sort.Strings(categoryList)
+	for _, category := range categoryList {
+		highlights = append(highlights, highlightCategory{
+			Name:    category,
+			Changes: categories[category],
+		})
+	}
+	if len(security) > 0 {
+		highlights = append(highlights, highlightCategory{
+			Name:    "Security Advisories",
+			Changes: security,
+		})
+	}
+	if len(breaking) > 0 {
+		highlights = append(highlights, highlightCategory{
+			Name:    "Breaking",
+			Changes: breaking,
+		})
+	}
+	if len(deprecation) > 0 {
+		highlights = append(highlights, highlightCategory{
+			Name:    "Deprecations",
+			Changes: deprecation,
+		})
+	}
+
+	return highlights
+}
+
+func getHighlightChange(project string, c *change) highlightChange {
+	return highlightChange{
+		Project: project,
+		Change:  c,
+	}
+}
+
 // getTemplate will use a builtin template if the template is not specified on the cli
 func getTemplate(context *cli.Context) (string, error) {
 	path := context.String("template")

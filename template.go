@@ -27,6 +27,21 @@ Welcome to the {{.Tag}} release of {{.ProjectName}}!
 
 {{.Preface}}
 
+{{- if .Highlights}}
+
+### Highlights
+{{- range $highlight := .Highlights}}
+
+{{- if $highlight.Name}}
+
+#### {{$highlight.Name}}
+{{- end}}
+{{ range $change := $highlight.Changes}}
+* {{ $change.Change.Formatted }}
+{{- end}}
+{{- end}}
+{{- end}}
+
 Please try out the release binaries and report any issues at
 https://github.com/{{.GithubRepo}}/issues.
 

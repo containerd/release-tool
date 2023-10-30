@@ -31,14 +31,18 @@ import (
 var prr = regexp.MustCompile(`^Merge pull request(?: #([0-9]+))? from (\S+)$`)
 
 type githubChangeProcessor struct {
-	repo  string
-	cache Cache // Need a way to expire or bypass cache
+	repo         string
+	linkName     string
+	cache        Cache
+	refreshCache bool
 }
 
-func githubChange(repo string, cache Cache) changeProcessor {
+func githubChange(repo, linkName string, cache Cache, refreshCache bool) changeProcessor {
 	return &githubChangeProcessor{
-		repo:  repo,
-		cache: cache,
+		repo:         repo,
+		linkName:     linkName,
+		cache:        cache,
+		refreshCache: refreshCache,
 	}
 }
 
@@ -50,17 +54,20 @@ func (p *githubChangeProcessor) process(c *change) error {
 				return err
 			}
 
-			title, err := getPRTitle(p.repo, pr, p.cache)
+			info, err := p.getPRInfo(p.repo, pr)
 			if err != nil {
 				return err
 			}
+			p.prChange(c, info, pr)
 
-			c.Title = title
-			c.Link = fmt.Sprintf("https://github.com/%s/pull/%d", p.repo, pr)
-			c.Formatted = fmt.Sprintf("%s ([#%d](%s))", c.Title, pr, c.Link)
 		} else if strings.HasPrefix(string(matches[2]), "GHSA-") {
-			c.Link = fmt.Sprintf("https://github.com/%s/security/advisories/%s", p.repo, matches[2])
-			c.Formatted = fmt.Sprintf("Github Security Advisory [%s](%s)", matches[2], c.Link)
+			ghsa := string(matches[2])
+			info, err := p.getAdvisoryInfo(p.repo, ghsa)
+			if err != nil {
+				return err
+			}
+			p.advisoryChange(c, info, ghsa)
+
 		} else {
 			logrus.Debugf("Nothing matched: %q", c.Description)
 		}
@@ -83,26 +90,73 @@ func (p *githubChangeProcessor) process(c *change) error {
 	return nil
 }
 
-// getPRTitle returns the Pull Request title from the github API
-// TODO: Update to also return labels
-func getPRTitle(repo string, prn int64, cache Cache) (string, error) {
+func (p *githubChangeProcessor) prChange(c *change, info pullRequestInfo, pr int64) {
+	for _, l := range info.Labels {
+		if l.Name == "impact/changelog" {
+			c.IsHighlight = true
+		} else if l.Name == "impact/breaking" {
+			c.IsBreaking = true
+		} else if l.Name == "impact/deprecation" {
+			c.IsDeprecation = true
+		} else if strings.HasPrefix(l.Name, "area/") {
+			if l.Description != "" {
+				c.Category = l.Description
+			} else {
+				c.Category = l.Name[5:]
+			}
+		}
+	}
+	c.Title = info.Title
+	if len(c.Title) > 0 && c.Title[0] == '[' {
+		idx := strings.IndexByte(c.Title, ']')
+		if idx > 0 {
+			c.Title = strings.TrimSpace(c.Title[idx:])
+		}
+	}
+
+	if c.Link == "" {
+		c.Link = fmt.Sprintf("https://github.com/%s/pull/%d", p.repo, pr)
+	}
+	c.Formatted = fmt.Sprintf("%s ([%s#%d](%s))", c.Title, p.linkName, pr, c.Link)
+}
+
+type pullRequestLabel struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+type pullRequestInfo struct {
+	Title  string             `json:"title"`
+	Labels []pullRequestLabel `json:"labels"`
+}
+
+// getPRInfo returns the Pull Request info from the github API
+//
+// See https://docs.github.com/en/rest/pulls/pulls?apiVersion=2022-11-28#get-a-pull-request
+func (p *githubChangeProcessor) getPRInfo(repo string, prn int64) (pullRequestInfo, error) {
 	u := fmt.Sprintf("https://api.github.com/repos/%s/pulls/%d", repo, prn)
-	key := u + " title"
-	if b, ok := cache.Get(key); ok { // TODO: Provide option to refresh cache
-		return string(b), nil
+	key := u + " title labels"
+	if !p.refreshCache {
+		if b, ok := p.cache.Get(key); ok {
+			var info pullRequestInfo
+			if err := json.Unmarshal(b, &info); err == nil {
+				return info, nil
+			}
+		}
 	}
 	req, err := http.NewRequest("GET", u, nil)
 	if err != nil {
-		return "", err
+		return pullRequestInfo{}, err
 	}
-	req.Header.Add("Accept", "application/vnd.github.v3+json")
+	req.Header.Add("Accept", "application/vnd.github+json")
+	req.Header.Add("X-GitHub-Api-Version", "2022-11-28")
 	if user, token := os.Getenv("GITHUB_ACTOR"), os.Getenv("GITHUB_TOKEN"); user != "" && token != "" {
 		req.SetBasicAuth(user, token)
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", err
+		return pullRequestInfo{}, err
 	}
 	defer resp.Body.Close()
 
@@ -110,21 +164,107 @@ func getPRTitle(repo string, prn int64, cache Cache) (string, error) {
 		if resp.StatusCode >= 403 {
 			logrus.Warn("Forbidden response, try setting GITHUB_USER and GITHUB_TOKEN environment variables")
 		}
-		return "", fmt.Errorf("unexpected status code %d for %s", resp.StatusCode, u)
+		return pullRequestInfo{}, fmt.Errorf("unexpected status code %d for %s", resp.StatusCode, u)
 	}
 
 	dec := json.NewDecoder(resp.Body)
 
-	pr := struct {
-		Title string `json:"title"`
-	}{}
-	if err := dec.Decode(&pr); err != nil {
-		return "", err
+	var info pullRequestInfo
+	if err := dec.Decode(&info); err != nil {
+		return pullRequestInfo{}, err
 	}
-	if pr.Title == "" {
-		return "", fmt.Errorf("unexpected empty title for %s", u)
+	if info.Title == "" {
+		return pullRequestInfo{}, fmt.Errorf("unexpected empty title for %s", u)
 	}
 
-	cache.Put(key, []byte(pr.Title))
-	return pr.Title, nil
+	cacheB, err := json.Marshal(info)
+	if err == nil {
+		p.cache.Put(key, cacheB)
+	}
+
+	return info, nil
+}
+
+func (p *githubChangeProcessor) advisoryChange(c *change, info advisoryInfo, ghsa string) {
+	c.IsSecurity = true
+	c.Link = info.Link
+	if c.Link == "" {
+		c.Link = fmt.Sprintf("https://github.com/%s/security/advisories/%s", p.repo, ghsa)
+	}
+	summary := info.Summary
+	if summary == "" {
+		summary = "Github Security Advisory"
+	}
+	c.Formatted = fmt.Sprintf("%s [%s](%s)", summary, ghsa, c.Link)
+	cveInfo := []string{}
+	if info.CVE != "" {
+		cveInfo = append(cveInfo, info.CVE)
+	}
+	if info.Severity != "" {
+		cveInfo = append(cveInfo, info.Severity)
+	}
+	if len(cveInfo) > 0 {
+		prefix := "[" + strings.Join(cveInfo, ", ") + "] "
+		c.Formatted = prefix + c.Formatted
+	}
+}
+
+type advisoryInfo struct {
+	CVE         string `json:"cve_id"`
+	Link        string `json:"html_url"`
+	Summary     string `json:"summary"`
+	Description string `json:"description"`
+	Severity    string `json:"severity"`
+}
+
+// getAdvisoryInfo returns github security advisory info
+//
+// See https://docs.github.com/en/rest/security-advisories/repository-advisories?apiVersion=2022-11-28#get-a-repository-security-advisory
+func (p *githubChangeProcessor) getAdvisoryInfo(repo, advisory string) (advisoryInfo, error) {
+	u := fmt.Sprintf("https://api.github.com/repos/%s/security-advisories/%s", repo, advisory)
+	key := u + " cve link summary description severity"
+	if !p.refreshCache {
+		if b, ok := p.cache.Get(key); ok {
+			var info advisoryInfo
+			if err := json.Unmarshal(b, &info); err == nil {
+				return info, nil
+			}
+		}
+	}
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return advisoryInfo{}, err
+	}
+	req.Header.Add("Accept", "application/vnd.github+json")
+	req.Header.Add("X-GitHub-Api-Version", "2022-11-28")
+	if user, token := os.Getenv("GITHUB_ACTOR"), os.Getenv("GITHUB_TOKEN"); user != "" && token != "" {
+		req.SetBasicAuth(user, token)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return advisoryInfo{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		if resp.StatusCode >= 403 {
+			logrus.Warn("Forbidden response, try setting GITHUB_USER and GITHUB_TOKEN environment variables")
+		}
+		return advisoryInfo{}, fmt.Errorf("unexpected status code %d for %s", resp.StatusCode, u)
+	}
+
+	dec := json.NewDecoder(resp.Body)
+
+	var info advisoryInfo
+	if err := dec.Decode(&info); err != nil {
+		return advisoryInfo{}, err
+	}
+
+	cacheB, err := json.Marshal(info)
+	if err == nil {
+		p.cache.Put(key, cacheB)
+	}
+
+	return info, nil
 }
