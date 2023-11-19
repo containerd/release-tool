@@ -108,7 +108,7 @@ func getPRTitle(repo string, prn int64, cache Cache) (string, error) {
 
 	if resp.StatusCode >= 400 {
 		if resp.StatusCode >= 403 {
-			logrus.Warn("Forbidden response, try setting GITHUB_USER and GITHUB_TOKEN environment variables")
+			logrus.Warn("Forbidden response, try setting GITHUB_ACTOR and GITHUB_TOKEN environment variables")
 		}
 		return "", fmt.Errorf("unexpected status code %d for %s", resp.StatusCode, u)
 	}
