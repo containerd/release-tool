@@ -45,9 +45,11 @@ type change struct {
 	Category string
 	Link     string
 
-	IsMerge bool
-	//IsBreaking  bool
-	//IsHighlight bool
+	IsMerge       bool
+	IsHighlight   bool
+	IsBreaking    bool
+	IsDeprecation bool
+	IsSecurity    bool
 
 	Formatted string
 }
@@ -90,6 +92,16 @@ type contributor struct {
 	OtherNames []string
 }
 
+type highlightChange struct {
+	Project string
+	Change  *change
+}
+
+type highlightCategory struct {
+	Name    string
+	Changes []highlightChange
+}
+
 type release struct {
 	ProjectName     string             `toml:"project_name"`
 	GithubRepo      string             `toml:"github_repo"`
@@ -120,6 +132,7 @@ type release struct {
 
 	// generated fields
 	Changes      []projectChange
+	Highlights   []highlightCategory
 	Contributors []contributor
 	Dependencies []dependency
 	Tag          string
@@ -161,6 +174,11 @@ This tool should be ran from the root of the project repository for a new releas
 			Usage:   "add links to changelog",
 		},
 		&cli.BoolFlag{
+			Name:    "highlights",
+			Aliases: []string{"g"},
+			Usage:   "use highlights based on pull request",
+		},
+		&cli.BoolFlag{
 			Name:    "short",
 			Aliases: []string{"s"},
 			Usage:   "shorten changelog length where possible",
@@ -174,14 +192,21 @@ This tool should be ran from the root of the project repository for a new releas
 			Usage:   "cache directory for static remote resources",
 			EnvVars: []string{"RELEASE_TOOL_CACHE"},
 		},
+		&cli.BoolFlag{
+			Name:    "refresh-cache",
+			Aliases: []string{"r"},
+			Usage:   "refreshes cache",
+		},
 	}
 	app.Action = func(context *cli.Context) error {
 		var (
-			releasePath = context.Args().First()
-			tag         = context.String("tag")
-			linkify     = context.Bool("linkify")
-			short       = context.Bool("short")
-			skipCommits = context.Bool("skip-commits")
+			releasePath  = context.Args().First()
+			tag          = context.String("tag")
+			linkify      = context.Bool("linkify")
+			highlights   = context.Bool("highlights")
+			short        = context.Bool("short")
+			skipCommits  = context.Bool("skip-commits")
+			refreshCache = context.Bool("refresh-cache")
 		)
 		if tag == "" {
 			tag = parseTag(releasePath)
@@ -237,9 +262,9 @@ This tool should be ran from the root of the project repository for a new releas
 		if err != nil {
 			return err
 		}
-		if linkify {
+		if linkify || highlights {
 			for _, change := range changes {
-				if err := githubChange(r.GithubRepo, cache).process(change); err != nil {
+				if err := githubChange(r.GithubRepo, "", cache, refreshCache).process(change); err != nil {
 					return err
 				}
 				if !change.IsMerge {
@@ -350,13 +375,13 @@ This tool should be ran from the root of the project repository for a new releas
 				if err := addContributors(dep.Previous, dep.Ref, contributors); err != nil {
 					return fmt.Errorf("failed to get authors for %s: %w", name, err)
 				}
-				if linkify {
+				if linkify || highlights {
 					if !strings.HasPrefix(dep.Name, "github.com/") {
 						logrus.Debugf("linkify only supported for Github, skipping %s", dep.Name)
 					} else {
 						ghname := dep.Name[11:]
 						for _, change := range changes {
-							if err := githubChange(ghname, cache).process(change); err != nil {
+							if err := githubChange(ghname, ghname, cache, refreshCache).process(change); err != nil {
 								return err
 							}
 							if !change.IsMerge {
@@ -388,7 +413,11 @@ This tool should be ran from the root of the project repository for a new releas
 		// update the release fields with generated data
 		r.Contributors = orderContributors(contributors)
 		r.Dependencies = updatedDeps
-		r.Changes = projectChanges
+		if highlights {
+			r.Highlights = groupHighlights(projectChanges)
+		} else {
+			r.Changes = projectChanges
+		}
 		r.Tag = tag
 		r.Version = version
 
