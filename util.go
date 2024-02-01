@@ -591,7 +591,12 @@ func addContributors(previous, commit string, contributors map[string]contributo
 		if len(p) != 2 {
 			return fmt.Errorf("unparsable git log output: %s", s.Text())
 		}
-		addContributor(contributors, p[1], p[0])
+		name := p[1]
+		if name == "bot" || strings.Contains(name, "[bot]") {
+			logrus.Debugf("Skipping bot contributor: %s <%s>", name, p[0])
+			continue
+		}
+		addContributor(contributors, name, p[0])
 	}
 	return s.Err()
 }
