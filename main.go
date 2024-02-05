@@ -51,7 +51,12 @@ type change struct {
 	IsDeprecation bool
 	IsSecurity    bool
 
+	// Formatted is formatted string for changelog or highlights if
+	// no release note is provided
 	Formatted string
+
+	// Highlight is used to provide highlight text from a release note
+	Highlight string
 }
 
 type dependency struct {

@@ -67,3 +67,30 @@ func TestGetGitURL(t *testing.T) {
 	}
 
 }
+
+func TestReleaseNote(t *testing.T) {
+	for i, tc := range []struct {
+		body string
+		note string
+	}{
+		{"", ""},
+		{"not a release note", ""},
+		{"```release-note\nJust a release note\n```", "Just a release note"},
+		{"``` release-note\nJust a release note\n```", "Just a release note"},
+		{"``` release-note\nJust a release note\n```\n", "Just a release note"},
+		{"``` release-note\r\nJust a release note\r\n```", "Just a release note"},
+		{"``` release-note\r\nJust a release note\r\n```\r\n", "Just a release note"},
+		{"``` release-note\r\nJust a\r\nrelease note\r\n```", "Just a\nrelease note"},
+		{"Pull request body\n\n```release-note\nMore than a\n**`release note`**\n```", "More than a\n**`release note`**"},
+		{"Pull request body\n```release-note\nThe release note\n```\nNot Actually the end", "The release note"},
+		{"Poorly formatted```release-note\nThe release note\n```\n", ""},
+		{"Two blocks\n```release-note\nThe release note\n```\nAnd\n\n```something-else\ncode and more code\n```", "The release note"},
+		{"Two release notes\n```release-note\nThe first release note\n```\nAnd\n\n```release-note\nThe second release note\n```", "The first release note"},
+	} {
+		note := getReleaseNote(tc.body)
+		if note != tc.note {
+			t.Errorf("[%d] unexpected release note\n\t%q\nexpected\n\t%q", i, note, tc.note)
+		}
+	}
+
+}

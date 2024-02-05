@@ -822,3 +822,18 @@ func resolveGitURL(name string, cache Cache) (string, error) {
 		}
 	}
 }
+
+// TODO: Support inner blocks and match multiple numbers of backticks
+var releaseRe = regexp.MustCompile("(?:\r?\n|\\A)``` ?(?:release-note|markdown changelog)\r?\n((?sU).*)\r?\n```(?:\r?\n|\\z)")
+
+func getReleaseNote(body string) string {
+	matches := releaseRe.FindStringSubmatch(strings.TrimSpace(body))
+	if len(matches) == 2 {
+		rn := strings.TrimSpace(strings.ReplaceAll(matches[1], "\r\n", "\n"))
+		if strings.HasPrefix(rn, "- ") || strings.HasPrefix(rn, "* ") {
+			rn = rn[2:]
+		}
+		return rn
+	}
+	return ""
+}

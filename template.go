@@ -37,7 +37,7 @@ Welcome to the {{.Tag}} release of {{.ProjectName}}!
 #### {{$highlight.Name}}
 {{- end}}
 {{ range $change := $highlight.Changes}}
-* {{ $change.Change.Formatted }}
+* {{ $change.Change.Highlight }}
 {{- end}}
 {{- end}}
 {{- end}}

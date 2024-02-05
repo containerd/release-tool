@@ -118,6 +118,13 @@ func (p *githubChangeProcessor) prChange(c *change, info pullRequestInfo, pr int
 		c.Link = fmt.Sprintf("https://github.com/%s/pull/%d", p.repo, pr)
 	}
 	c.Formatted = fmt.Sprintf("%s ([%s#%d](%s))", c.Title, p.linkName, pr, c.Link)
+	releaseNote := getReleaseNote(info.Body)
+	if releaseNote != "" {
+		c.Highlight = fmt.Sprintf("%s ([%s#%d](%s))", releaseNote, p.linkName, pr, c.Link)
+	} else {
+		c.Highlight = c.Formatted
+	}
+
 }
 
 type pullRequestLabel struct {
@@ -128,6 +135,7 @@ type pullRequestLabel struct {
 type pullRequestInfo struct {
 	Title  string             `json:"title"`
 	Labels []pullRequestLabel `json:"labels"`
+	Body   string             `json:"body"`
 }
 
 // getPRInfo returns the Pull Request info from the github API
