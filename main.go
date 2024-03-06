@@ -415,7 +415,8 @@ This tool should be ran from the root of the project repository for a new releas
 		r.Dependencies = updatedDeps
 		if highlights {
 			r.Highlights = groupHighlights(projectChanges)
-		} else {
+		}
+		if !highlights || !skipCommits {
 			r.Changes = projectChanges
 		}
 		r.Tag = tag
