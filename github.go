@@ -110,7 +110,7 @@ func (p *githubChangeProcessor) prChange(c *change, info pullRequestInfo, pr int
 	if len(c.Title) > 0 && c.Title[0] == '[' {
 		idx := strings.IndexByte(c.Title, ']')
 		if idx > 0 {
-			c.Title = strings.TrimSpace(c.Title[idx:])
+			c.Title = strings.TrimSpace(c.Title[idx+1:])
 		}
 	}
 
