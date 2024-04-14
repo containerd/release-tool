@@ -142,10 +142,10 @@ type release struct {
 
 func main() {
 	app := cli.NewApp()
-	app.Name = "release"
-	app.Description = `release tooling.
+	app.Name = "release-tool"
+	app.Description = `release tooling to create annotated GitHub release notes.
 
-This tool should be ran from the root of the project repository for a new release.
+This tool should run from the root of the project repository for a new release.
 `
 	app.Flags = []cli.Flag{
 		&cli.BoolFlag{
