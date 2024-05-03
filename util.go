@@ -66,10 +66,21 @@ func parseTag(path string) string {
 	return strings.TrimSuffix(filepath.Base(path), ".toml")
 }
 
-func parseDependencies(commit string) ([]dependency, error) {
+func parseDependencies(commit, subpath string) ([]dependency, error) {
 	rd, err := fileFromRev(commit, vendorConf)
 	if err == nil {
 		return parseVendorConfDependencies(rd)
+	}
+	// Look for go module at subpath if provided
+	if subpath != "" {
+		rd, err = fileFromRev(commit, filepath.Join(subpath, modulesTxt))
+		if err == nil {
+			return parseModulesTxtDependencies(rd)
+		}
+		rd, err = fileFromRev(commit, filepath.Join(subpath, goMod))
+		if err == nil {
+			return parseGoModDependencies(rd)
+		}
 	}
 	rd, err = fileFromRev(commit, modulesTxt)
 	if err == nil {
@@ -451,6 +462,7 @@ func fileFromRev(rev, file string) (io.Reader, error) {
 }
 
 var gitConfigs = map[string]string{}
+var gitSubpaths = []string{}
 
 func git(args ...string) ([]byte, error) {
 	var gitArgs []string
@@ -458,6 +470,10 @@ func git(args ...string) ([]byte, error) {
 		gitArgs = append(gitArgs, "-c", fmt.Sprintf("%s=%s", k, v))
 	}
 	gitArgs = append(gitArgs, args...)
+	if len(gitSubpaths) > 0 && len(args) > 0 && args[0] == "log" {
+		gitArgs = append(gitArgs, "--show-pulls", "--")
+		gitArgs = append(gitArgs, gitSubpaths...)
+	}
 	o, err := exec.Command("git", gitArgs...).CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("%s: %s", err, o)
