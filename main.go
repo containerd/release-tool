@@ -105,6 +105,7 @@ type highlightCategory struct {
 type release struct {
 	ProjectName     string             `toml:"project_name"`
 	GithubRepo      string             `toml:"github_repo"`
+	SubPath         string             `toml:"sub_path"`
 	Commit          string             `toml:"commit"`
 	Previous        string             `toml:"previous"`
 	PreRelease      bool               `toml:"pre_release"`
@@ -247,6 +248,10 @@ This tool should run from the root of the project repository for a new release.
 		}
 		logrus.Infof("Welcome to the %s release tool...", r.ProjectName)
 
+		if r.SubPath != "" {
+			gitSubpaths = append(gitSubpaths, r.SubPath)
+		}
+
 		mailmapPath, err := filepath.Abs(".mailmap")
 		if err != nil {
 			return fmt.Errorf("failed to resolve mailmap: %w", err)
@@ -289,13 +294,13 @@ This tool should run from the root of the project repository for a new release.
 		})
 
 		logrus.Infof("creating new release %s with %d new changes...", tag, len(changes))
-		current, err := parseDependencies(r.Commit)
+		current, err := parseDependencies(r.Commit, r.SubPath)
 		if err != nil {
 			return err
 		}
 		overrideDependencies(current, r.OverrideDeps)
 
-		previous, err := parseDependencies(r.Previous)
+		previous, err := parseDependencies(r.Previous, r.SubPath)
 		if err != nil {
 			return err
 		}
