@@ -294,13 +294,14 @@ This tool should run from the root of the project repository for a new release.
 		})
 
 		logrus.Infof("creating new release %s with %d new changes...", tag, len(changes))
-		current, err := parseDependencies(r.Commit, r.SubPath)
+		replacedDeps := make(map[string]string)
+		current, err := parseDependencies(r.Commit, r.SubPath, replacedDeps)
 		if err != nil {
 			return err
 		}
 		overrideDependencies(current, r.OverrideDeps)
 
-		previous, err := parseDependencies(r.Previous, r.SubPath)
+		previous, err := parseDependencies(r.Previous, r.SubPath, nil)
 		if err != nil {
 			return err
 		}
@@ -426,6 +427,11 @@ This tool should run from the root of the project repository for a new release.
 		}
 		r.Tag = tag
 		r.Version = version
+
+		// Log warnings at end for higher visibility
+		for o, n := range replacedDeps {
+			logrus.WithFields(logrus.Fields{"old": o, "new": n}).Warn("Dependency replace found, consider removing before tagged release")
+		}
 
 		// Remove trailing new lines
 		r.Preface = strings.TrimRightFunc(r.Preface, unicode.IsSpace)

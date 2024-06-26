@@ -66,7 +66,7 @@ func parseTag(path string) string {
 	return strings.TrimSuffix(filepath.Base(path), ".toml")
 }
 
-func parseDependencies(commit, subpath string) ([]dependency, error) {
+func parseDependencies(commit, subpath string, replaced map[string]string) ([]dependency, error) {
 	rd, err := fileFromRev(commit, vendorConf)
 	if err == nil {
 		return parseVendorConfDependencies(rd)
@@ -75,25 +75,25 @@ func parseDependencies(commit, subpath string) ([]dependency, error) {
 	if subpath != "" {
 		rd, err = fileFromRev(commit, filepath.Join(subpath, modulesTxt))
 		if err == nil {
-			return parseModulesTxtDependencies(rd)
+			return parseModulesTxtDependencies(rd, replaced)
 		}
 		rd, err = fileFromRev(commit, filepath.Join(subpath, goMod))
 		if err == nil {
-			return parseGoModDependencies(rd)
+			return parseGoModDependencies(rd, replaced)
 		}
 	}
 	rd, err = fileFromRev(commit, modulesTxt)
 	if err == nil {
-		return parseModulesTxtDependencies(rd)
+		return parseModulesTxtDependencies(rd, replaced)
 	}
 	rd, err = fileFromRev(commit, goMod)
 	if err == nil {
-		return parseGoModDependencies(rd)
+		return parseGoModDependencies(rd, replaced)
 	}
 	return nil, fmt.Errorf("finding dependency file failed: %w", err)
 }
 
-func parseModulesTxtDependencies(r io.Reader) ([]dependency, error) {
+func parseModulesTxtDependencies(r io.Reader, replaced map[string]string) ([]dependency, error) {
 	var dependencies []dependency
 	s := bufio.NewScanner(r)
 	for s.Scan() {
@@ -112,12 +112,27 @@ func parseModulesTxtDependencies(r io.Reader) ([]dependency, error) {
 		if len(parts) == 3 {
 			commitOrVersionPart = parts[2]
 		} else if len(parts) == 5 && parts[2] == "=>" {
+			if replaced != nil {
+				replaced[parts[1]] = parts[3]
+			}
 			// replace directive in go.mod without old version
 			// no need to care since it will has corresponding one with old version
 			continue
 		} else if len(parts) == 6 && parts[3] == "=>" {
+			if replaced != nil {
+				replaced[parts[1]] = parts[4]
+			}
 			commitOrVersionPart = parts[5]
-		} else if (len(parts) == 4 && parts[2] == "=>") || (len(parts) == 5 && parts[3] == "=>") {
+		} else if len(parts) == 4 && parts[2] == "=>" {
+			if replaced != nil {
+				replaced[parts[1]] = parts[3]
+			}
+			// Ignore replace directive which uses filepath
+			continue
+		} else if len(parts) == 5 && parts[3] == "=>" {
+			if replaced != nil {
+				replaced[parts[1]] = parts[4]
+			}
 			// Ignore replace directive which uses filepath
 			continue
 		} else {
@@ -133,7 +148,7 @@ func parseModulesTxtDependencies(r io.Reader) ([]dependency, error) {
 	return dependencies, nil
 }
 
-func parseGoModDependencies(r io.Reader) ([]dependency, error) {
+func parseGoModDependencies(r io.Reader, replaced map[string]string) ([]dependency, error) {
 	var err error
 
 	contents, err := io.ReadAll(r)
@@ -160,6 +175,9 @@ func parseGoModDependencies(r io.Reader) ([]dependency, error) {
 	}
 
 	for _, replace := range goMod.Replace {
+		if replaced != nil {
+			replaced[replace.Old.Path] = replace.New.Path
+		}
 		if strings.HasPrefix(replace.New.Path, "./") {
 			continue
 		}
