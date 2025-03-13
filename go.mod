@@ -1,6 +1,6 @@
 module github.com/containerd/release-tool
 
-go 1.19
+go 1.23
 
 require (
 	github.com/pelletier/go-toml/v2 v2.0.5
