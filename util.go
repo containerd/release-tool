@@ -782,7 +782,7 @@ func resolveGitURL(name string, cache Cache) (string, error) {
 		return string(b), nil
 	}
 
-	resp, err := http.Get(u)
+	resp, err := http.Get(u) //nolint:gosec
 	if err != nil {
 		return "", err
 	}
