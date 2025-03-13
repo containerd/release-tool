@@ -1,6 +1,8 @@
 module github.com/containerd/release-tool
 
-go 1.23
+go 1.23.0
+
+toolchain go1.24.1
 
 require (
 	github.com/pelletier/go-toml/v2 v2.0.5
