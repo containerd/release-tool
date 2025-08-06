@@ -38,9 +38,9 @@ jobs:
         working-directory: src/github.com/containerd/release-tool
 
     - name: Linter
-      uses: golangci/golangci-lint-action@v6
+      uses: golangci/golangci-lint-action@v8
       with:
-        version: v1.64.2
+        version: v2.3.1
         working-directory: src/github.com/containerd/release-tool
 
     - name: Unit Test

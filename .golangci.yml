@@ -1,42 +1,37 @@
+version: "2"
 linters:
   enable:
-    - copyloopvar # Checks for loop variable copies in Go 1.22+
-    - gofmt
-    - goimports
+    - copyloopvar
+    - dupword
     - gosec
-    - ineffassign
     - misspell
     - nolintlint
     - revive
-    - staticcheck
     - unconvert
-    - unused
-    - govet
-    - dupword # Checks for duplicate words in the source code
   disable:
     - errcheck
-
+  settings:
+    gosec:
+      excludes:
+        - G204
+        - G305
+        - G306
+        - G402
+        - G404
+        - G115
+    nolintlint:
+      allow-unused: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
 issues:
-  include:
-    - EXC0002
   max-issues-per-linter: 0
   max-same-issues: 0
-
-linters-settings:
-  gosec:
-    # The following issues surfaced when `gosec` linter
-    # was enabled. They are temporarily excluded to unblock
-    # the existing workflow, but still to be addressed by
-    # future works.
-    excludes:
-      - G204
-      - G305
-      - G306
-      - G402
-      - G404
-      - G115
-  nolintlint:
-    allow-unused: true
-
-run:
-  timeout: 2m
+formatters:
+  enable:
+    - gofmt
+    - goimports
