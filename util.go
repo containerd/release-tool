@@ -805,9 +805,10 @@ func resolveGitURL(name string, cache Cache) (string, error) {
 				name, content string
 			)
 			for _, attr := range tok.Attr {
-				if attr.Key == "name" {
+				switch attr.Key {
+				case "name":
 					name = attr.Val
-				} else if attr.Key == "content" {
+				case "content":
 					content = attr.Val
 				}
 			}
