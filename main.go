@@ -41,9 +41,9 @@ type change struct {
 	Commit      string `toml:"commit"`
 	Description string `toml:"description"`
 
-	Title    string
-	Category string
-	Link     string
+	Title      string
+	Categories map[string]struct{}
+	Link       string
 
 	IsMerge       bool
 	IsHighlight   bool

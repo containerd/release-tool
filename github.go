@@ -100,9 +100,10 @@ func (p *githubChangeProcessor) prChange(c *change, info pullRequestInfo, pr int
 			c.IsDeprecation = true
 		} else if strings.HasPrefix(l.Name, "area/") {
 			if l.Description != "" {
-				c.Category = l.Description
-			} else {
-				c.Category = l.Name[5:]
+				if c.Categories == nil {
+					c.Categories = map[string]struct{}{}
+				}
+				c.Categories[l.Description] = struct{}{}
 			}
 		}
 	}
