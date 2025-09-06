@@ -704,11 +704,22 @@ func groupHighlights(changes []projectChange) []highlightCategory {
 			if c.IsSecurity {
 				security = append(security, getHighlightChange(project.Name, c))
 			} else if c.IsHighlight {
-				cc, ok := categories[c.Category]
-				if !ok {
-					categoryList = append(categoryList, c.Category)
+				if len(c.Categories) == 0 {
+					cc, ok := categories[""]
+					if !ok {
+						categoryList = append(categoryList, "")
+					}
+					categories[""] = append(cc, getHighlightChange(project.Name, c))
+				} else {
+					for category := range c.Categories {
+						cc, ok := categories[category]
+						if !ok {
+							categoryList = append(categoryList, category)
+						}
+						categories[category] = append(cc, getHighlightChange(project.Name, c))
+					}
+
 				}
-				categories[c.Category] = append(cc, getHighlightChange(project.Name, c))
 			}
 
 			// Allow deprecation and breaking changes to show up twice
@@ -822,4 +833,19 @@ func resolveGitURL(name string, cache Cache) (string, error) {
 			}
 		}
 	}
+}
+
+// TODO: Support inner blocks and match multiple numbers of backticks
+var releaseRe = regexp.MustCompile("(?:\r?\n|\\A)``` ?(?:release-note|markdown changelog)\r?\n((?sU).*)\r?\n```(?:\r?\n|\\z)")
+
+func getReleaseNote(body string) string {
+	matches := releaseRe.FindStringSubmatch(strings.TrimSpace(body))
+	if len(matches) == 2 {
+		rn := strings.TrimSpace(strings.ReplaceAll(matches[1], "\r\n", "\n"))
+		if strings.HasPrefix(rn, "- ") || strings.HasPrefix(rn, "* ") {
+			rn = rn[2:]
+		}
+		return rn
+	}
+	return ""
 }

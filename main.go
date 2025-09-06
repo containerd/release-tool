@@ -41,9 +41,9 @@ type change struct {
 	Commit      string `toml:"commit"`
 	Description string `toml:"description"`
 
-	Title    string
-	Category string
-	Link     string
+	Title      string
+	Categories map[string]struct{}
+	Link       string
 
 	IsMerge       bool
 	IsHighlight   bool
@@ -51,7 +51,12 @@ type change struct {
 	IsDeprecation bool
 	IsSecurity    bool
 
+	// Formatted is formatted string for changelog or highlights if
+	// no release note is provided
 	Formatted string
+
+	// Highlight is used to provide highlight text from a release note
+	Highlight string
 }
 
 type dependency struct {
