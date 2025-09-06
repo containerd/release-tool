@@ -106,6 +106,7 @@ type release struct {
 	ProjectName     string             `toml:"project_name"`
 	GithubRepo      string             `toml:"github_repo"`
 	SubPath         string             `toml:"sub_path"`
+	ExcludePaths    []string           `toml:"exclude_paths"`
 	Commit          string             `toml:"commit"`
 	Previous        string             `toml:"previous"`
 	PreRelease      bool               `toml:"pre_release"`
@@ -250,6 +251,11 @@ This tool should run from the root of the project repository for a new release.
 
 		if r.SubPath != "" {
 			gitSubpaths = append(gitSubpaths, r.SubPath)
+		}
+		if len(r.ExcludePaths) > 0 {
+			for _, p := range r.ExcludePaths {
+				gitSubpaths = append(gitSubpaths, fmt.Sprintf(":^%s", p))
+			}
 		}
 
 		mailmapPath, err := filepath.Abs(".mailmap")
