@@ -123,7 +123,7 @@ func (p *githubChangeProcessor) prChange(c *change, info pullRequestInfo, pr int
 	if releaseNote != "" {
 		c.Highlight = fmt.Sprintf("%s ([%s#%d](%s))", releaseNote, p.linkName, pr, c.Link)
 	} else {
-		c.Highlight = c.Formatted
+		c.Highlight = fmt.Sprintf("**%s** ([%s#%d](%s))", c.Title, p.linkName, pr, c.Link)
 	}
 
 }
