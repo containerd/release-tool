@@ -393,10 +393,11 @@ This tool should run from the root of the project repository for a new release.
 					return fmt.Errorf("failed to get authors for %s: %w", name, err)
 				}
 				if linkify || highlights {
-					if !strings.HasPrefix(dep.Name, "github.com/") {
+					repo := matches[0]
+					if !strings.HasPrefix(repo, "github.com/") {
 						logrus.Debugf("linkify only supported for Github, skipping %s", dep.Name)
 					} else {
-						ghname := dep.Name[11:]
+						ghname := repo[11:]
 						for _, change := range changes {
 							if err := githubChange(ghname, ghname, cache, refreshCache).process(change); err != nil {
 								return err
