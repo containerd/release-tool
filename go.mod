@@ -6,7 +6,7 @@ toolchain go1.24.1
 
 require (
 	github.com/pelletier/go-toml/v2 v2.0.5
-	github.com/sirupsen/logrus v1.9.0
+	github.com/sirupsen/logrus v1.9.1
 	github.com/urfave/cli/v2 v2.20.3
 	golang.org/x/mod v0.6.0
 	golang.org/x/net v0.38.0
