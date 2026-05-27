@@ -79,6 +79,37 @@ preface = """\
 This is the first release"""
 ```
 
+## Coding agent skills
+
+This repository contains a skill for coding agents such as the Antigravity CLI (`agy`) to help prepare containerd patch releases.
+
+You can find the skill in [skills/containerd-release](skills/containerd-release).
+
+### How to install
+
+Symlink the skill directory into your global Antigravity skills folder (`~/.gemini/antigravity/skills/`):
+
+```bash
+# Ensure the directory exists
+mkdir -p ~/.gemini/antigravity/skills/
+
+# Link the skill
+ln -s "/path/to/release-tool/skills/containerd-release" ~/.gemini/antigravity/skills/containerd-release
+```
+### How to use
+
+If you are using Antigravity, you can use a slash-command to invoke the skill, like this:
+
+```
+/containerd-release Help me prepare the next 2.2 release of containerd
+```
+
+If your coding agent does not support slash-commands for skills, you may be able to invoke by name:
+
+```
+Use the containerd-release skill to help prepare the next 2.3 release of containerd
+```
+
 ## Project details
 
 release-tool is a containerd sub-project, licensed under the [Apache 2.0 license](./LICENSE).
