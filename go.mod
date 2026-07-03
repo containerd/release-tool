@@ -1,15 +1,13 @@
 module github.com/containerd/release-tool
 
-go 1.23.0
-
-toolchain go1.24.1
+go 1.25.0
 
 require (
 	github.com/pelletier/go-toml/v2 v2.0.5
 	github.com/sirupsen/logrus v1.9.1
 	github.com/urfave/cli/v2 v2.20.3
 	golang.org/x/mod v0.6.0
-	golang.org/x/net v0.38.0
+	golang.org/x/net v0.55.0
 )
 
 require (
@@ -17,5 +15,5 @@ require (
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/stretchr/testify v1.8.1 // indirect
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
-	golang.org/x/sys v0.31.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 )
