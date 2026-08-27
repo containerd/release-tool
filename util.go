@@ -797,16 +797,30 @@ func resolveGitURL(name string, cache Cache) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		return "", fmt.Errorf("unexpected status code %d for %s", resp.StatusCode, u)
 	}
 
-	t := html.NewTokenizer(resp.Body)
+	resolved, err := parseGoImportGitURL(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	cache.Put(u, []byte(resolved))
+	return resolved, nil
+}
+
+// parseGoImportGitURL returns the repository URL from the go-import meta tag
+// of an HTML document. The content of the tag is "prefix vcs repo-root" with
+// an optional fourth field naming the subdirectory of the repository the
+// module lives in.
+func parseGoImportGitURL(r io.Reader) (string, error) {
+	t := html.NewTokenizer(r)
 	for {
 		switch t.Next() {
 		case html.ErrorToken:
 			err := t.Err()
-			if err == nil {
+			if err == nil || errors.Is(err, io.EOF) {
 				err = errors.New("no go-import meta tag")
 			}
 			return "", err
@@ -825,10 +839,8 @@ func resolveGitURL(name string, cache Cache) (string, error) {
 			}
 			if name == "go-import" {
 				parts := strings.Fields(content)
-				if len(parts) == 3 && parts[1] == "git" {
-					resolved := parts[2]
-					cache.Put(u, []byte(resolved))
-					return resolved, nil
+				if (len(parts) == 3 || len(parts) == 4) && parts[1] == "git" {
+					return parts[2], nil
 				}
 			}
 		}
