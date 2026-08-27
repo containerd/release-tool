@@ -16,7 +16,10 @@
 
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseModuleCommit(t *testing.T) {
 	for i, tc := range []struct {
@@ -93,4 +96,58 @@ func TestReleaseNote(t *testing.T) {
 		}
 	}
 
+}
+
+func TestParseGoImportGitURL(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		doc  string
+		git  string
+		err  string
+	}{
+		{
+			name: "repo root",
+			doc:  `<html><head><meta name="go-import" content="go.opentelemetry.io/otel git https://github.com/open-telemetry/opentelemetry-go"></head></html>`,
+			git:  "https://github.com/open-telemetry/opentelemetry-go",
+		},
+		{
+			name: "subdirectory",
+			doc: `<html><head>
+<meta name="go-import" content="cyphar.com/go-pathrs git https://github.com/cyphar/libpathrs.git go-pathrs">
+<meta name="go-source" content="cyphar.com/go-pathrs https://github.com/cyphar/libpathrs {repo}/tree/{commit}/go-pathrs{/dir} {repo}/blob/{commit}/go-pathrs/{file}#L{line}">
+</head></html>`,
+			git: "https://github.com/cyphar/libpathrs.git",
+		},
+		{
+			name: "too many fields",
+			doc:  `<html><head><meta name="go-import" content="example.com/mod git https://example.com/mod.git sub extra"></head></html>`,
+			err:  "no go-import meta tag",
+		},
+		{
+			name: "not git",
+			doc:  `<html><head><meta name="go-import" content="example.com/mod mod https://example.com/proxy"></head></html>`,
+			err:  "no go-import meta tag",
+		},
+		{
+			name: "no meta tag",
+			doc:  `<html><head><title>nothing here</title></head></html>`,
+			err:  "no go-import meta tag",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			git, err := parseGoImportGitURL(strings.NewReader(tc.doc))
+			if tc.err != "" {
+				if err == nil || err.Error() != tc.err {
+					t.Fatalf("unexpected error %v, expected %q", err, tc.err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if git != tc.git {
+				t.Fatalf("unexpected git url %q, expected %q", git, tc.git)
+			}
+		})
+	}
 }
