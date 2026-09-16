@@ -801,7 +801,18 @@ func resolveGitURL(name string, cache Cache) (string, error) {
 		return "", fmt.Errorf("unexpected status code %d for %s", resp.StatusCode, u)
 	}
 
-	t := html.NewTokenizer(resp.Body)
+	resolved, err := parseGoImportGitURL(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	cache.Put(u, []byte(resolved))
+	return resolved, nil
+}
+
+// parseGoImportGitURL returns the repository root from the first go-import
+// meta tag using git as the version control system.
+func parseGoImportGitURL(r io.Reader) (string, error) {
+	t := html.NewTokenizer(r)
 	for {
 		switch t.Next() {
 		case html.ErrorToken:
@@ -825,10 +836,8 @@ func resolveGitURL(name string, cache Cache) (string, error) {
 			}
 			if name == "go-import" {
 				parts := strings.Fields(content)
-				if len(parts) == 3 && parts[1] == "git" {
-					resolved := parts[2]
-					cache.Put(u, []byte(resolved))
-					return resolved, nil
+				if len(parts) >= 3 && parts[1] == "git" {
+					return parts[2], nil
 				}
 			}
 		}

@@ -16,7 +16,10 @@
 
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseModuleCommit(t *testing.T) {
 	for i, tc := range []struct {
@@ -66,6 +69,60 @@ func TestGetGitURL(t *testing.T) {
 
 	}
 
+}
+
+func TestParseGoImportGitURL(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		html string
+		git  string
+	}{
+		{
+			name: "three fields",
+			html: `<meta name="go-import" content="sigs.k8s.io/yaml git https://github.com/kubernetes-sigs/yaml">`,
+			git:  "https://github.com/kubernetes-sigs/yaml",
+		},
+		{
+			name: "more than three fields",
+			html: `<meta name="go-import" content="cyphar.com/go-pathrs git https://github.com/cyphar/libpathrs go-pathrs">`,
+			git:  "https://github.com/cyphar/libpathrs",
+		},
+		{
+			name: "full document",
+			html: `<html><head><meta name="go-source" content="cyphar.com/go-pathrs _ _ _">` +
+				`<meta name="go-import" content="cyphar.com/go-pathrs git https://github.com/cyphar/libpathrs go-pathrs">` +
+				`</head><body>nothing to see here</body></html>`,
+			git: "https://github.com/cyphar/libpathrs",
+		},
+		{
+			name: "not git",
+			html: `<meta name="go-import" content="example.com/hg hg https://example.com/hg">`,
+		},
+		{
+			name: "too few fields",
+			html: `<meta name="go-import" content="example.com/short git">`,
+		},
+		{
+			name: "no go-import",
+			html: `<html><head><meta name="go-source" content="example.com/none _ _ _"></head></html>`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			git, err := parseGoImportGitURL(strings.NewReader(tc.html))
+			if tc.git == "" {
+				if err == nil {
+					t.Fatalf("expected error, got git url %q", git)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if git != tc.git {
+				t.Errorf("unexpected git url %q, expected %q", git, tc.git)
+			}
+		})
+	}
 }
 
 func TestReleaseNote(t *testing.T) {
